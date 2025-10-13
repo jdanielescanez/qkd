@@ -17,8 +17,7 @@ pub fn rand_bool() -> bool {
 }
 
 pub fn rand_float() -> f64 {
-    let mut rng = rng();
-    rng.random_range(0.0..=1.0) // TODO: Fix to 0.0..1.0?
+    rng().random()
 }
 
 pub fn suffle_and_split<T>(mut vector: Vec<T>) -> (Vec<T>, Vec<T>)
