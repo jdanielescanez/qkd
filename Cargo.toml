@@ -5,6 +5,7 @@ edition = "2021"
 authors = ["Daniel Escanez-Exposito <jescanez@ull.edu.es>"]
 description = "A Quantum Key Distribution simulator developed in Rust"
 license = "MIT"
+repository = "https://github.com/jdanielescanez/qkd"
 
 [dependencies]
 bon = "3.7.2"
