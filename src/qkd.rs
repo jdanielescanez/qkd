@@ -1,8 +1,6 @@
 use crate::participants::{Receiver, Sender};
-use crate::utils::{rand_float, H, I};
+use crate::utils::{rand_float, suffle_and_split, H, I};
 use bon::Builder;
-use rand::rng;
-use rand::seq::SliceRandom;
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug)]
@@ -35,13 +33,20 @@ impl QExecutionResult {
     }
 }
 
+/// The result of the entire QKD protocol.
 #[derive(Debug)]
-pub struct QResult {
+pub struct QKDResult {
+    /// Duration of all the quantum communication process.
     pub elapsed_time: Duration,
+    /// If the communication is aborted, it is set to false.
     pub is_considered_secure: bool,
+    /// Length of the generated key.
+    /// If the communication is aborted, it is set to 0.
     pub key_length: Option<usize>,
-    // TODO: Explain that QBER is only for the secret key
+    /// Quantum Bit Error Rate (QBER) of the final generated key.
+    /// If the communication is aborted, it is set to None.
     pub quantum_bit_error_rate: Option<f64>,
+    /// The knowledge rate of Eve about the final generated key.
     pub eve_key_knowledge: f64,
 }
 
@@ -64,7 +69,7 @@ pub struct QKD {
 }
 
 impl QKD {
-    pub fn run(&self, number_of_qubits: usize, interception_rate: f64) -> QResult {
+    pub fn run(&self, number_of_qubits: usize, interception_rate: f64) -> QKDResult {
         let initial_time = Instant::now();
         let results = (0..number_of_qubits)
             .into_iter()
@@ -121,7 +126,7 @@ impl QKD {
         }
         let elapsed_time = initial_time.elapsed();
 
-        QResult {
+        QKDResult {
             elapsed_time,
             is_considered_secure,
             key_length,
@@ -177,7 +182,7 @@ fn default_public_basis_discussion(results: &Vec<QExecutionResult>) -> PublicDis
     let (alice_basis, bob_basis): (Vec<usize>, Vec<usize>) =
         results.iter().map(|x| (x.alice_basis, x.bob_basis)).unzip();
 
-    let mut eq_basis_indexes = alice_basis
+    let eq_basis_indexes = alice_basis
         .into_iter()
         .zip(bob_basis)
         .enumerate()
@@ -185,12 +190,7 @@ fn default_public_basis_discussion(results: &Vec<QExecutionResult>) -> PublicDis
         .map(|(i, _)| i)
         .collect::<Vec<usize>>();
 
-    let mut rng = rng();
-    eq_basis_indexes.shuffle(&mut rng);
-
-    let half = eq_basis_indexes.len() / 2;
-    let indexes_to_check = eq_basis_indexes[..half].to_vec();
-    let indexes_to_key = eq_basis_indexes[half..].to_vec();
+    let (indexes_to_check, indexes_to_key) = suffle_and_split(eq_basis_indexes);
 
     let (alice_public_values, bob_public_values) = indexes_to_check
         .iter()

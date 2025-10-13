@@ -4,11 +4,11 @@ pub mod types;
 pub mod utils;
 
 use crate::participants::{Receiver, Sender};
-pub use crate::qkd::{PublicDiscussionResult, QExecutionResult, QResult, QKD};
+pub use crate::qkd::{PublicDiscussionResult, QExecutionResult, QKDResult, QKD};
 use crate::types::Qubit;
 use crate::utils::{suffle_and_split, H, H_Y, I};
 
-pub fn run_bb84(number_of_qubits: usize, interception_rate: f64) -> QResult {
+pub fn run_bb84(number_of_qubits: usize, interception_rate: f64) -> QKDResult {
     let alice = Sender::builder().posible_basis(vec![I, H]).build();
     let bob = Receiver::builder().posible_basis(vec![I, H]).build();
 
@@ -16,7 +16,7 @@ pub fn run_bb84(number_of_qubits: usize, interception_rate: f64) -> QResult {
     bb84.run(number_of_qubits, interception_rate)
 }
 
-pub fn run_six_state(number_of_qubits: usize, interception_rate: f64) -> QResult {
+pub fn run_six_state(number_of_qubits: usize, interception_rate: f64) -> QKDResult {
     let alice = Sender::builder().posible_basis(vec![I, H, H_Y]).build();
     let bob = Receiver::builder()
         .posible_basis(vec![I, H, H_Y.invert().unwrap()])
@@ -29,7 +29,7 @@ pub fn run_six_state(number_of_qubits: usize, interception_rate: f64) -> QResult
     six_state.run(number_of_qubits, interception_rate)
 }
 
-pub fn run_b92(number_of_qubits: usize, interception_rate: f64) -> QResult {
+pub fn run_b92(number_of_qubits: usize, interception_rate: f64) -> QKDResult {
     let prepare_b92 = Box::new(|| (Qubit::new(), false));
 
     let alice = Sender::builder()

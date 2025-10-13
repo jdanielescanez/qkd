@@ -3,6 +3,7 @@ use bon::Builder;
 use crate::types::{ComplexMatrix, Qubit};
 use crate::utils::{rand_bool, rand_choose, rand_float, X};
 
+#[doc(hidden)]
 #[derive(Builder)]
 pub struct Sender {
     pub(crate) posible_basis: Vec<ComplexMatrix>,
@@ -12,6 +13,7 @@ pub struct Sender {
     pub(crate) prepare: Box<dyn Fn() -> (Qubit, bool)>,
 }
 
+#[doc(hidden)]
 #[derive(Builder)]
 pub struct Receiver {
     pub(crate) posible_basis: Vec<ComplexMatrix>,

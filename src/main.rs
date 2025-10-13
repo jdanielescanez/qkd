@@ -1,23 +1,23 @@
-use qkd::{run_b92, run_bb84, run_six_state, QResult};
+use qkd::{run_b92, run_bb84, run_six_state, QKDResult};
 
 use clap::Parser;
 use csv::Writer;
 use std::collections::HashMap;
 use std::process;
 
-fn get_available_protocols() -> HashMap<String, Box<fn(usize, f64) -> QResult>> {
+fn get_available_protocols() -> HashMap<String, Box<fn(usize, f64) -> QKDResult>> {
     HashMap::from([
         (
             "BB84".to_string(),
-            Box::new(run_bb84 as fn(usize, f64) -> QResult),
+            Box::new(run_bb84 as fn(usize, f64) -> QKDResult),
         ),
         (
             "SixState".to_string(),
-            Box::new(run_six_state as fn(usize, f64) -> QResult),
+            Box::new(run_six_state as fn(usize, f64) -> QKDResult),
         ),
         (
             "B92".to_string(),
-            Box::new(run_b92 as fn(usize, f64) -> QResult),
+            Box::new(run_b92 as fn(usize, f64) -> QKDResult),
         ),
     ])
 }
