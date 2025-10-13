@@ -1,10 +1,10 @@
 pub mod participants;
-pub mod qkd;
+pub mod protocol;
 pub mod types;
 pub mod utils;
 
 use crate::participants::{Receiver, Sender};
-pub use crate::qkd::{PublicDiscussionResult, QExecutionResult, QKDResult, QKD};
+use crate::protocol::{PublicDiscussionResult, QExecutionResult, QKDResult, QKD};
 use crate::types::Qubit;
 use crate::utils::{suffle_and_split, H, H_Y, I};
 

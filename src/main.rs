@@ -1,4 +1,4 @@
-use qkd::{run_b92, run_bb84, run_six_state, QKDResult};
+use qkd::{protocol::QKDResult, run_b92, run_bb84, run_six_state};
 
 use clap::Parser;
 use csv::Writer;
