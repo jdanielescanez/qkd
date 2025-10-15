@@ -107,6 +107,8 @@ id    PROTOCOL   number_of_qubits  interception_rate    time_μs is_considered_s
 0     BB84                  1000                  0       1709                 true        250          0
 ```
 
+---
+
 Run the B92 protocol with 2000 qubits, an interception rate of 5%, and 3 repetitions:
 ```
 qkd --protocol B92 --number-of-qubits 2000 --interception-rate 0.05 --repetitions 3 --quiet --output output/example.csv
@@ -119,6 +121,30 @@ id,PROTOCOL,number_of_qubits,interception_rate,time_μs,is_considered_secure,key
 0,B92,2000,0.05,6836,false,0,-1
 1,B92,2000,0.05,8979,false,0,-1
 2,B92,2000,0.05,11684,false,0,-1
+```
+---
+
+Run multiple QKD protocols (BB84, SixState, and B92) with different parameters in a single execution:
+```
+cargo run -- -p BB84 SixState B92 -n 100 1000 -i 0.001 0.01 -q -o output/complete_example.csv
+```
+
+The terminal will not display any results, but it will have generated the following file in the [specified path](./output/complete_example.csv):
+
+```
+id,PROTOCOL,number_of_qubits,interception_rate,time_μs,is_considered_secure,key_length,QBER
+0,BB84,100,0.001,245,true,24,0
+1,BB84,100,0.01,128,false,0,-1
+2,BB84,1000,0.001,4412,true,242,0
+3,BB84,1000,0.01,1383,true,248,0.004032258064516129
+4,SixState,100,0.001,135,true,17,0
+5,SixState,100,0.01,128,true,12,0
+6,SixState,1000,0.001,1577,true,151,0
+7,SixState,1000,0.01,1292,true,167,0.011976047904191617
+8,B92,100,0.001,127,true,17,0
+9,B92,100,0.01,114,true,11,0
+10,B92,1000,0.001,2595,true,121,0
+11,B92,1000,0.01,1961,true,125,0
 ```
 
 ---

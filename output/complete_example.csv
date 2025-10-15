@@ -1,0 +1,13 @@
+id,PROTOCOL,number_of_qubits,interception_rate,time_μs,is_considered_secure,key_length,QBER
+0,BB84,100,0.001,245,true,24,0
+1,BB84,100,0.01,128,false,0,-1
+2,BB84,1000,0.001,4412,true,242,0
+3,BB84,1000,0.01,1383,true,248,0.004032258064516129
+4,SixState,100,0.001,135,true,17,0
+5,SixState,100,0.01,128,true,12,0
+6,SixState,1000,0.001,1577,true,151,0
+7,SixState,1000,0.01,1292,true,167,0.011976047904191617
+8,B92,100,0.001,127,true,17,0
+9,B92,100,0.01,114,true,11,0
+10,B92,1000,0.001,2595,true,121,0
+11,B92,1000,0.01,1961,true,125,0

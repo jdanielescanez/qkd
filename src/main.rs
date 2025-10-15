@@ -31,11 +31,11 @@ struct Args {
     protocol: Vec<String>,
 
     /// Number of qubits to send
-    #[arg(short, long, default_values_t = vec![1000])]
+    #[arg(short, long, default_values_t = vec![1000], num_args = 1..)]
     number_of_qubits: Vec<usize>,
 
     /// Rate of intercepted qubits by Eve
-    #[arg(short, long, default_values_t = vec![0.0], value_parser = parse_rate)]
+    #[arg(short, long, default_values_t = vec![0.0], num_args = 1.., value_parser = parse_rate)]
     interception_rate: Vec<f64>,
 
     /// Number of repetitions by experiment
@@ -117,15 +117,16 @@ fn main() {
         let _ = w.write_record(&results_header);
     }
 
-    for (protocol_id, protocol_tag) in args.protocol.iter().enumerate() {
+    let mut id = 0;
+    for protocol_tag in &args.protocol {
         for &n_qubits in &args.number_of_qubits {
             for &interception_rate in &args.interception_rate {
-                for id in 0..args.repetitions {
+                for _ in 0..args.repetitions {
                     let result =
                         get_available_protocols()[protocol_tag](n_qubits, interception_rate);
 
                     let result_vector = [
-                        (id + protocol_id * args.repetitions).to_string(),
+                        id.to_string(),
                         protocol_tag.to_string(),
                         n_qubits.to_string(),
                         interception_rate.to_string(),
@@ -141,6 +142,7 @@ fn main() {
                     if !args.quiet {
                         print_aligned_row(&result_vector);
                     }
+                    id += 1;
                 }
             }
         }
