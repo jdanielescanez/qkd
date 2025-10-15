@@ -1,0 +1,4 @@
+id,PROTOCOL,number_of_qubits,interception_rate,time_μs,is_considered_secure,key_length,QBER
+0,B92,2000,0.05,6836,false,0,-1
+1,B92,2000,0.05,8979,false,0,-1
+2,B92,2000,0.05,11684,false,0,-1

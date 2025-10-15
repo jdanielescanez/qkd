@@ -69,6 +69,8 @@ fn main() {
 }
 ```
 
+This structs contain the results of a QKD protocol run, including execution time, security status, final key length, quantum bit error rate (QBER), and Eve's estimated knowledge of the key.
+
 
 ### As a binary
 
@@ -82,13 +84,14 @@ qkd --protocol <protocol> [OPTIONS]
 
 | Option                     | Description                                                                                     | Default Value |
 |----------------------------|-------------------------------------------------------------------------------------------------|---------------|
-| `--protocol`, `-p`         | QKD protocol to simulate (`BB84`, `SixState`, `B92`).                                          | Required      |
+| `--protocol`, `-p`         | QKD protocol to simulate (`BB84`, `SixState`, `B92`) [required]                                | -              |
 | `--number-of-qubits`, `-n` | Number of qubits to send in the simulation.                                                    | `1000`        |
 | `--interception-rate`, `-i`| Interception rate of qubits by Eve (value between `0.0` and `1.0`).                           | `0.0`         |
 | `--repetitions`, `-r`      | Number of repetitions of the experiment.                                                       | `1`           |
 | `--quiet`, `-q`             | Suppress console output.                                                                        | `false`       |
 | `--output`, `-o`           | Path to the CSV file where results will be saved (required if `--quiet` is enabled).            | None          |
-
+| `--help`, `-h` | Print help |
+| `--version`, `-V` | Print version |
 
 #### Examples
 
@@ -97,9 +100,25 @@ Run the BB84 protocol with default parameters:
 qkd --protocol BB84
 ```
 
+The terminal will display the following result:
+
+```
+id    PROTOCOL   number_of_qubits  interception_rate    time_μs is_considered_secure key_length       QBER
+0     BB84                  1000                  0       1709                 true        250          0
+```
+
 Run the B92 protocol with 2000 qubits, an interception rate of 5%, and 3 repetitions:
 ```
-qkd --protocol B92 --number-of-qubits 2000 --interception-rate 0.05 --repetitions 3
+qkd --protocol B92 --number-of-qubits 2000 --interception-rate 0.05 --repetitions 3 --quiet --output output/example.csv
+```
+
+The terminal will not display any results, but it will have generated the following file in the [specified path](./output/example.csv):
+
+```
+id,PROTOCOL,number_of_qubits,interception_rate,time_μs,is_considered_secure,key_length,QBER
+0,B92,2000,0.05,6836,false,0,-1
+1,B92,2000,0.05,8979,false,0,-1
+2,B92,2000,0.05,11684,false,0,-1
 ```
 
 ---
