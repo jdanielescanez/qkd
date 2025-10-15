@@ -20,13 +20,16 @@ A Rust library and CLI tool for simulating **Quantum Key Distribution (QKD)** pr
 
 ## Installation
 
-### As a Library
+### As a library
 
-Add `qkd` to your `Cargo.toml`:
+```bash
+cargo add qkd
+```
 
-```toml
-[dependencies]
-qkd = "0.0.0"
+### As a binary
+
+```bash
+cargo install qkd
 ```
 
 ---
@@ -45,52 +48,59 @@ Contains the core QKD logic, including:
 Defines quantum-related types, such as `Qubit` or `ComplexMatrix`.
 
 ### `utils`
-Utility functions for quantum operations, such as `suffle_and_split` and basis matrices.
+Utility functions for quantum operations, such as `shuffle_and_split` and basis matrices.
 
 ---
-## Examples
+## Example
 
-### Simulate BB84 Protocol
+### As a library
 ```rust
-use qkd::run_bb84;
+use qkd::{run_bb84, run_six_state, run_b92};
 
 fn main() {
-    let result = run_bb84(1000, 0.1);
+    let result = run_bb84(1000, 0.01);
     println!("BB84 Result: {:?}", result);
-}
-```
 
-## Simulate Six-State Protocol
-
-```rust
-use qkd::run_six_state;
-
-fn main() {
-    let result = run_six_state(1000, 0.1);
+    let result = run_six_state(1000, 0.01);
     println!("Six-State Result: {:?}", result);
-}
-```
-## Simulate B92 Protocol
-```rust
-use qkd::run_b92;
-
-fn main() {
-    let result = run_b92(1000, 0.1);
+    
+    let result = run_b92(1000, 0.01);
     println!("B92 Result: {:?}", result);
 }
 ```
 
----
-## Output
 
-The CLI tool prints results in a formatted table:
+### As a binary
 
-```text
-id    PROTOCOL   number_of_qubits   interception_rate   time_μs   is_considered_secure   key_length   QBER
-0     BB84       1000                0.1                 12345    true                    500          0.05
+Execute the simulator using the following command:
+
+```
+qkd --protocol <protocol> [OPTIONS]
 ```
 
-If the `--output` option is provided, results are saved to a CSV file.
+#### Options
+
+| Option                     | Description                                                                                     | Default Value |
+|----------------------------|-------------------------------------------------------------------------------------------------|---------------|
+| `--protocol`, `-p`         | QKD protocol to simulate (`BB84`, `SixState`, `B92`).                                          | Required      |
+| `--number-of-qubits`, `-n` | Number of qubits to send in the simulation.                                                    | `1000`        |
+| `--interception-rate`, `-i`| Interception rate of qubits by Eve (value between `0.0` and `1.0`).                           | `0.0`         |
+| `--repetitions`, `-r`      | Number of repetitions of the experiment.                                                       | `1`           |
+| `--quiet`, `-q`             | Suppress console output.                                                                        | `false`       |
+| `--output`, `-o`           | Path to the CSV file where results will be saved (required if `--quiet` is enabled).            | None          |
+
+
+#### Examples
+
+Run the BB84 protocol with default parameters:
+```
+qkd --protocol BB84
+```
+
+Run the B92 protocol with 2000 qubits, an interception rate of 5%, and 3 repetitions:
+```
+qkd --protocol B92 --number-of-qubits 2000 --interception-rate 0.05 --repetitions 3
+```
 
 ---
 ## License

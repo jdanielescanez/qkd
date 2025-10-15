@@ -1,5 +1,5 @@
 use crate::participants::{Receiver, Sender};
-use crate::utils::{rand_float, suffle_and_split, H, I};
+use crate::utils::{rand_float, shuffle_and_split, H, I};
 use bon::Builder;
 use std::time::{Duration, Instant};
 
@@ -279,7 +279,7 @@ fn default_public_basis_discussion(results: &Vec<QExecutionResult>) -> PublicDis
         .map(|(i, _)| i)
         .collect::<Vec<usize>>();
 
-    let (indexes_to_check, indexes_to_key) = suffle_and_split(eq_basis_indexes);
+    let (indexes_to_check, indexes_to_key) = shuffle_and_split(eq_basis_indexes);
 
     let (alice_public_values, bob_public_values) = indexes_to_check
         .iter()

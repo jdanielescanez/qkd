@@ -53,7 +53,7 @@ pub fn rand_float() -> f64 {
 /// A tuple containing two new vectors:
 /// - The first half of the shuffled vector.
 /// - The second half of the shuffled vector.
-pub fn suffle_and_split<T>(mut vector: Vec<T>) -> (Vec<T>, Vec<T>)
+pub fn shuffle_and_split<T>(mut vector: Vec<T>) -> (Vec<T>, Vec<T>)
 where
     T: Clone,
 {
