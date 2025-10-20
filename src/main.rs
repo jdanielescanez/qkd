@@ -75,7 +75,7 @@ fn parse_rate(s: &str) -> Result<f64, String> {
 
 fn print_aligned_row(columns: &[String]) {
     println!(
-        "{:<5} {:<10} {:>15} {:>18} {:>10} {:>20} {:>10} {:>10}",
+        "{:<5} {:<10} {:>15} {:>18} {:>10} {:>20} {:>10} {:>20} {:>10}",
         columns[0],
         columns[1],
         columns[2],
@@ -83,7 +83,8 @@ fn print_aligned_row(columns: &[String]) {
         columns[4],
         columns[5],
         columns[6],
-        columns[7]
+        columns[7],
+        columns[8],
     );
 }
 
@@ -97,6 +98,7 @@ fn main() {
         "time_μs".to_string(),
         "is_considered_secure".to_string(),
         "key_length".to_string(),
+        "eve_knowledge".to_string(),
         "QBER".to_string(),
     ];
 
@@ -133,6 +135,7 @@ fn main() {
                         result.elapsed_time.as_micros().to_string(),
                         result.is_considered_secure.to_string(),
                         result.key_length.unwrap_or(0).to_string(),
+                        result.eve_knowledge.to_string(),
                         result.quantum_bit_error_rate.unwrap_or(-1.0).to_string(),
                     ];
 

@@ -103,8 +103,8 @@ qkd --protocol BB84
 The terminal will display the following result:
 
 ```
-id    PROTOCOL   number_of_qubits  interception_rate    time_μs is_considered_secure key_length       QBER
-0     BB84                  1000                  0       1709                 true        250          0
+id    PROTOCOL   number_of_qubits  interception_rate    time_μs is_considered_secure key_length    eve_knowledge       QBER
+0     BB84                  1000                  0       1717                 true        251                    0          0
 ```
 
 ---
@@ -117,34 +117,34 @@ qkd --protocol B92 --number-of-qubits 2000 --interception-rate 0.05 --repetition
 The terminal will not display any results, but it will have generated the following file in the [specified path](./output/example.csv):
 
 ```
-id,PROTOCOL,number_of_qubits,interception_rate,time_μs,is_considered_secure,key_length,QBER
-0,B92,2000,0.05,6836,false,0,-1
-1,B92,2000,0.05,8979,false,0,-1
-2,B92,2000,0.05,11684,false,0,-1
+id,PROTOCOL,number_of_qubits,interception_rate,time_μs,is_considered_secure,key_length,eve_knowledge,QBER
+0,B92,2000,0.05,6677,false,0,0,-1
+1,B92,2000,0.05,6331,false,0,0,-1
+2,B92,2000,0.05,9680,false,0,0,-1
 ```
 ---
 
 Run multiple QKD protocols (BB84, SixState, and B92) with different parameters in a single execution:
 ```
-cargo run -- -p BB84 SixState B92 -n 100 1000 -i 0.001 0.01 -q -o output/complete_example.csv
+qkd -p BB84 SixState B92 -n 100 1000 -i 0.001 0.01 -q -o output/complete_example.csv
 ```
 
 The terminal will not display any results, but it will have generated the following file in the [specified path](./output/complete_example.csv):
 
 ```
-id,PROTOCOL,number_of_qubits,interception_rate,time_μs,is_considered_secure,key_length,QBER
-0,BB84,100,0.001,245,true,24,0
-1,BB84,100,0.01,128,false,0,-1
-2,BB84,1000,0.001,4412,true,242,0
-3,BB84,1000,0.01,1383,true,248,0.004032258064516129
-4,SixState,100,0.001,135,true,17,0
-5,SixState,100,0.01,128,true,12,0
-6,SixState,1000,0.001,1577,true,151,0
-7,SixState,1000,0.01,1292,true,167,0.011976047904191617
-8,B92,100,0.001,127,true,17,0
-9,B92,100,0.01,114,true,11,0
-10,B92,1000,0.001,2595,true,121,0
-11,B92,1000,0.01,1961,true,125,0
+id,PROTOCOL,number_of_qubits,interception_rate,time_μs,is_considered_secure,key_length,eve_knowledge,QBER
+0,BB84,100,0.001,236,true,30,0,0
+1,BB84,100,0.01,132,true,30,0.03333333333333333,0
+2,BB84,1000,0.001,1144,true,247,0,0
+3,BB84,1000,0.01,1138,true,240,0.004166666666666667,0.008333333333333333
+4,SixState,100,0.001,259,true,19,0,0
+5,SixState,100,0.01,450,false,0,0,-1
+6,SixState,1000,0.001,1129,true,151,0,0
+7,SixState,1000,0.01,5695,true,159,0,0.012578616352201259
+8,B92,100,0.001,111,true,14,0,0
+9,B92,100,0.01,104,true,14,0,0
+10,B92,1000,0.001,4364,true,126,0,0
+11,B92,1000,0.01,5775,false,0,0,-1
 ```
 
 ---

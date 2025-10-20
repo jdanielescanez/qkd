@@ -75,7 +75,7 @@ pub struct QKDResult {
     pub quantum_bit_error_rate: Option<f64>,
 
     /// Estimated fraction of the final key known by an eavesdropper (Eve).
-    pub eve_key_knowledge: f64,
+    pub eve_knowledge: f64,
 }
 
 /// Represents the public discussion phase results of a QKD protocol.
@@ -142,7 +142,7 @@ impl QKD {
             discussion_result.bob_public_values,
         );
 
-        let mut eve_key_knowledge = 0.0;
+        let mut eve_knowledge = 0.0;
         let (mut quantum_bit_error_rate, mut key_length) = (None, None);
         if is_considered_secure {
             let ((alice_secret_values, bob_secret_values), eve_secret_values): (
@@ -179,7 +179,7 @@ impl QKD {
                 });
 
             quantum_bit_error_rate = Some(mismatched_bits / key_length.unwrap() as f64);
-            eve_key_knowledge = absolute_eve_knowledge / key_length.unwrap() as f64;
+            eve_knowledge = absolute_eve_knowledge / key_length.unwrap() as f64;
         }
         let elapsed_time = initial_time.elapsed();
 
@@ -188,7 +188,7 @@ impl QKD {
             is_considered_secure,
             key_length,
             quantum_bit_error_rate,
-            eve_key_knowledge,
+            eve_knowledge,
         }
     }
 
