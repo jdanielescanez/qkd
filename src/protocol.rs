@@ -1,7 +1,7 @@
 use crate::participants::{Receiver, Sender};
 use crate::utils::{rand_float, shuffle_and_split, H, I};
 use bon::Builder;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// Represents the result of a single quantum execution round in a QKD protocol.
 ///
@@ -60,7 +60,7 @@ impl QExecutionResult {
 #[derive(Debug)]
 pub struct QKDResult {
     /// Total duration of the quantum communication process, from initialization to completion.
-    pub elapsed_time: Duration,
+    pub elapsed_time: u128,
 
     /// Indicates whether the communication is considered secure.
     /// If `false`, the protocol was aborted due to security concerns.
@@ -181,7 +181,7 @@ impl QKD {
             quantum_bit_error_rate = Some(mismatched_bits / key_length.unwrap() as f64);
             eve_knowledge = absolute_eve_knowledge / key_length.unwrap() as f64;
         }
-        let elapsed_time = initial_time.elapsed();
+        let elapsed_time = initial_time.elapsed().as_micros();
 
         QKDResult {
             elapsed_time,

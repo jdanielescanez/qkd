@@ -1,26 +1,8 @@
-use qkd::{protocol::QKDResult, run_b92, run_bb84, run_six_state};
+use qkd::{build_all_available_protocols, run_experiment, ExperimentResult};
 
 use clap::Parser;
 use csv::Writer;
-use std::collections::HashMap;
 use std::process;
-
-fn get_available_protocols() -> HashMap<String, Box<fn(usize, f64) -> QKDResult>> {
-    HashMap::from([
-        (
-            "BB84".to_string(),
-            Box::new(run_bb84 as fn(usize, f64) -> QKDResult),
-        ),
-        (
-            "SixState".to_string(),
-            Box::new(run_six_state as fn(usize, f64) -> QKDResult),
-        ),
-        (
-            "B92".to_string(),
-            Box::new(run_b92 as fn(usize, f64) -> QKDResult),
-        ),
-    ])
-}
 
 /// QKD Simulator CLI
 #[derive(Parser, Debug)]
@@ -52,11 +34,11 @@ struct Args {
 }
 
 fn parse_protocol_tag(s: &str) -> Result<String, String> {
-    let allowed = get_available_protocols();
-    if allowed.contains_key(s) {
+    let allowed_names = build_all_available_protocols();
+    if allowed_names.contains_key(s) {
         Ok(s.to_string())
     } else {
-        let valid_keys: Vec<_> = allowed.keys().collect();
+        let valid_keys: Vec<_> = allowed_names.keys().collect();
         Err(format!(
             "`{}` is not an allowed protocol. Allowed protocols are: {:?}",
             s, valid_keys
@@ -75,7 +57,7 @@ fn parse_rate(s: &str) -> Result<f64, String> {
 
 fn print_aligned_row(columns: &[String]) {
     println!(
-        "{:<5} {:<10} {:>15} {:>18} {:>10} {:>20} {:>10} {:>20} {:>10}",
+        "{:<20} {:<10} {:>15} {:>18} {:>10} {:>20} {:>10} {:>20} {:>10}",
         columns[0],
         columns[1],
         columns[2],
@@ -119,35 +101,48 @@ fn main() {
         let _ = w.write_record(&results_header);
     }
 
-    let mut id = 0;
-    for protocol_tag in &args.protocol {
-        for &n_qubits in &args.number_of_qubits {
-            for &interception_rate in &args.interception_rate {
-                for _ in 0..args.repetitions {
-                    let result =
-                        get_available_protocols()[protocol_tag](n_qubits, interception_rate);
+    let Args {
+        protocol,
+        number_of_qubits,
+        interception_rate,
+        repetitions,
+        quiet,
+        ..
+    } = args;
 
-                    let result_vector = [
-                        id.to_string(),
-                        protocol_tag.to_string(),
-                        n_qubits.to_string(),
-                        interception_rate.to_string(),
-                        result.elapsed_time.as_micros().to_string(),
-                        result.is_considered_secure.to_string(),
-                        result.key_length.unwrap_or(0).to_string(),
-                        result.eve_knowledge.to_string(),
-                        result.quantum_bit_error_rate.unwrap_or(-1.0).to_string(),
-                    ];
+    let results = run_experiment(protocol, number_of_qubits, interception_rate, repetitions);
 
-                    if let Some(w) = &mut writer {
-                        let _ = w.write_record(&result_vector);
-                    }
-                    if !args.quiet {
-                        print_aligned_row(&result_vector);
-                    }
-                    id += 1;
-                }
-            }
+    for ExperimentResult {
+        id,
+        protocol_tag,
+        n_qubits,
+        interception_rate,
+        result,
+    } in results
+    {
+        let result = [
+            id,
+            protocol_tag.to_string(),
+            n_qubits.to_string(),
+            interception_rate.to_string(),
+            result.elapsed_time.to_string(),
+            result.is_considered_secure.to_string(),
+            result
+                .key_length
+                .as_ref()
+                .map_or("None".to_string(), |v| v.to_string()),
+            result.eve_knowledge.to_string(),
+            result
+                .quantum_bit_error_rate
+                .as_ref()
+                .map_or("None".to_string(), |v| v.to_string()),
+        ];
+
+        if let Some(w) = &mut writer {
+            let _ = w.write_record(&result);
+        }
+        if !quiet {
+            print_aligned_row(&result);
         }
     }
 }
