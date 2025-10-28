@@ -18,10 +18,8 @@ pub mod types;
 /// helper functions like shuffle_and_split for protocol execution.
 pub mod utils;
 
-use std::collections::HashMap;
-
 use crate::participants::{Receiver, Sender};
-use crate::protocol::{PublicDiscussionResult, QExecutionResult, QKDResult, QKD};
+use crate::protocol::{PublicDiscussionResult, QExecutionResult, QKD};
 use crate::types::Qubit;
 use crate::utils::{shuffle_and_split, H, H_Y, I};
 
@@ -33,8 +31,11 @@ pub fn build_bb84() -> QKD {
     let alice = Sender::builder().posible_basis(vec![I, H]).build();
     let bob = Receiver::builder().posible_basis(vec![I, H]).build();
 
-    let bb84 = QKD::builder().alice(alice).bob(bob).build();
-    bb84
+    QKD::builder()
+        .name("BB84".to_string())
+        .alice(alice)
+        .bob(bob)
+        .build()
 }
 
 /// Builds and configures a QKD instance for the Six-State protocol.
@@ -50,8 +51,12 @@ pub fn build_six_state() -> QKD {
         .posible_basis(vec![I, H, H_Y.invert().unwrap()])
         .build();
 
-    let six_state = QKD::builder().alice(alice).bob(bob).eve(eve).build();
-    six_state
+    QKD::builder()
+        .name("SixState".to_string())
+        .alice(alice)
+        .bob(bob)
+        .eve(eve)
+        .build()
 }
 
 /// Builds and configures a QKD instance for the B92 protocol.
@@ -68,13 +73,12 @@ pub fn build_b92() -> QKD {
         .build();
     let bob = Receiver::builder().posible_basis(vec![I, H]).build();
 
-    let b92 = QKD::builder()
+    QKD::builder()
+        .name("B92".to_string())
         .alice(alice)
         .bob(bob)
         .public_basis_discussion(Box::new(public_basis_discussion_b92))
-        .build();
-
-    b92
+        .build()
 }
 
 /// Performs the public basis discussion specific to the B92 protocol.
@@ -113,86 +117,4 @@ fn public_basis_discussion_b92(results: &Vec<QExecutionResult>) -> PublicDiscuss
         indexes_to_key,
         results,
     }
-}
-
-/// Returns a map of available QKD protocol configurations.
-///
-/// # Returns
-/// A `HashMap` where the keys are protocol names ("BB84", "SixState", "B92")
-/// and the values are pre-configured `QKD` instances for each protocol.
-pub fn build_all_available_protocols() -> HashMap<String, QKD> {
-    HashMap::from([
-        ("BB84".to_string(), build_bb84()),
-        ("SixState".to_string(), build_six_state()),
-        ("B92".to_string(), build_b92()),
-    ])
-}
-
-/// Struct representing the result of a single QKD experiment.
-///
-/// # Fields
-/// * `id` - Unique identifier for the experiment.
-/// * `protocol_tag` - Name of the protocol used.
-/// * `n_qubits` - Number of qubits used in the experiment.
-/// * `interception_rate` - Probability that Eve intercepted a qubit (0.0 to 1.0).
-/// * `result` - The `QKDResult` containing the detailed results of the experiment.
-pub struct ExperimentResult {
-    pub id: String,
-    pub protocol_tag: String,
-    pub n_qubits: usize,
-    pub interception_rate: f64,
-    pub result: QKDResult,
-}
-
-/// Executes a series of QKD experiments across different protocols, qubit counts, and interception rates.
-///
-/// # Arguments
-/// * `protocol` - Vector of protocol names to test.
-/// * `number_of_qubits` - Vector of qubit counts to use in each experiment.
-/// * `interception_rate` - Vector of interception probabilities to test (0.0 to 1.0).
-/// * `repetitions` - Number of times to repeat each combination of parameters.
-///
-/// # Returns
-/// A vector of `ExperimentResult` structs, each representing the result of a single experiment.
-pub fn run_experiment(
-    protocol: Vec<String>,
-    number_of_qubits: Vec<usize>,
-    interception_rate: Vec<f64>,
-    repetitions: usize,
-) -> Vec<ExperimentResult> {
-    let protocol_ref = &protocol;
-    let number_of_qubits_ref = &number_of_qubits;
-    let interception_rate_ref = &interception_rate;
-    let repetitions_ref = &repetitions;
-    let all_combinations = protocol_ref.iter().flat_map(|protocol_tag| {
-        number_of_qubits_ref.iter().flat_map(move |n_qubits| {
-            interception_rate_ref
-                .iter()
-                .flat_map(move |interception_rate| {
-                    (0..*repetitions_ref).map(move |repetition| {
-                        (protocol_tag, n_qubits, interception_rate, repetition)
-                    })
-                })
-        })
-    });
-
-    all_combinations
-        .map(
-            |(protocol_tag, &n_qubits, &interception_rate, repetition)| {
-                let id = format!(
-                    "{}_{}_{}-{}",
-                    protocol_tag, n_qubits, interception_rate, repetition
-                );
-
-                ExperimentResult {
-                    id,
-                    protocol_tag: protocol_tag.clone(),
-                    n_qubits,
-                    interception_rate,
-                    result: build_all_available_protocols()[protocol_tag]
-                        .run(n_qubits, interception_rate),
-                }
-            },
-        )
-        .collect()
 }

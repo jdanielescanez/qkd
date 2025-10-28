@@ -101,6 +101,8 @@ pub struct PublicDiscussionResult {
 /// the public basis discussion logic, and the methods to execute the protocol.
 #[derive(Builder)]
 pub struct QKD {
+    /// The name of the QKD protocol.
+    name: String,
     /// Quantum sender (Alice) in the QKD protocol.
     alice: Sender,
     /// Quantum receiver (Bob) in the QKD protocol.
@@ -116,6 +118,14 @@ pub struct QKD {
 }
 
 impl QKD {
+    /// Returns the name of the QKD protocol instance.
+    ///
+    /// # Returns
+    /// A `String` representing the name of the protocol.
+    pub fn get_name(&self) -> String {
+        self.name.clone()
+    }
+
     /// Executes the QKD protocol for a given number of qubits and interception rate.
     ///
     /// # Arguments

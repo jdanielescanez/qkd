@@ -1,8 +1,10 @@
-use qkd::{build_all_available_protocols, run_experiment, ExperimentResult};
-
 use clap::Parser;
 use csv::Writer;
+use std::collections::HashMap;
 use std::process;
+
+use qkd::protocol::{QKDResult, QKD};
+use qkd::{build_b92, build_bb84, build_six_state};
 
 /// QKD Simulator CLI
 #[derive(Parser, Debug)]
@@ -31,6 +33,88 @@ struct Args {
     /// Output CSV file path
     #[arg(short, long)]
     output: Option<String>,
+}
+
+/// Struct representing the result of a single QKD experiment.
+///
+/// # Fields
+/// * `id` - Unique identifier for the experiment.
+/// * `protocol_tag` - Name of the protocol used.
+/// * `n_qubits` - Number of qubits used in the experiment.
+/// * `interception_rate` - Probability that Eve intercepted a qubit (0.0 to 1.0).
+/// * `result` - The `QKDResult` containing the detailed results of the experiment.
+struct ExperimentResult {
+    id: String,
+    protocol_tag: String,
+    n_qubits: usize,
+    interception_rate: f64,
+    result: QKDResult,
+}
+
+/// Executes a series of QKD experiments across different protocols, qubit counts, and interception rates.
+///
+/// # Arguments
+/// * `protocol` - Vector of protocol names to test.
+/// * `number_of_qubits` - Vector of qubit counts to use in each experiment.
+/// * `interception_rate` - Vector of interception probabilities to test (0.0 to 1.0).
+/// * `repetitions` - Number of times to repeat each combination of parameters.
+///
+/// # Returns
+/// A vector of `ExperimentResult` structs, each representing the result of a single experiment.
+fn run_experiment(
+    protocol: Vec<&QKD>,
+    number_of_qubits: Vec<usize>,
+    interception_rate: Vec<f64>,
+    repetitions: usize,
+) -> Vec<ExperimentResult> {
+    let protocol_ref = &protocol;
+    let number_of_qubits_ref = &number_of_qubits;
+    let interception_rate_ref = &interception_rate;
+    let repetitions_ref = &repetitions;
+    let all_combinations = protocol_ref.iter().flat_map(|protocol_tag| {
+        number_of_qubits_ref.iter().flat_map(move |n_qubits| {
+            interception_rate_ref
+                .iter()
+                .flat_map(move |interception_rate| {
+                    (0..*repetitions_ref).map(move |repetition| {
+                        (protocol_tag, n_qubits, interception_rate, repetition)
+                    })
+                })
+        })
+    });
+
+    all_combinations
+        .map(|(protocol, &n_qubits, &interception_rate, repetition)| {
+            let id = format!(
+                "{}_{}_{}-{}",
+                protocol.get_name(),
+                n_qubits,
+                interception_rate,
+                repetition
+            );
+
+            ExperimentResult {
+                id,
+                protocol_tag: protocol.get_name(),
+                n_qubits,
+                interception_rate,
+                result: protocol.run(n_qubits, interception_rate),
+            }
+        })
+        .collect()
+}
+
+/// Returns a map of available QKD protocol configurations.
+///
+/// # Returns
+/// A `HashMap` where the keys are protocol names and
+/// the values are pre-configured `QKD` instances for each protocol.
+fn build_all_available_protocols() -> HashMap<String, QKD> {
+    HashMap::from([
+        ("BB84".to_string(), build_bb84()),
+        ("SixState".to_string(), build_six_state()),
+        ("B92".to_string(), build_b92()),
+    ])
 }
 
 fn parse_protocol_tag(s: &str) -> Result<String, String> {
@@ -110,7 +194,16 @@ fn main() {
         ..
     } = args;
 
-    let results = run_experiment(protocol, number_of_qubits, interception_rate, repetitions);
+    let available_protocols = build_all_available_protocols();
+    let results = run_experiment(
+        protocol
+            .iter()
+            .map(|tag| &available_protocols[tag])
+            .collect(),
+        number_of_qubits,
+        interception_rate,
+        repetitions,
+    );
 
     for ExperimentResult {
         id,
@@ -122,7 +215,7 @@ fn main() {
     {
         let result = [
             id,
-            protocol_tag.to_string(),
+            protocol_tag,
             n_qubits.to_string(),
             interception_rate.to_string(),
             result.elapsed_time.to_string(),
