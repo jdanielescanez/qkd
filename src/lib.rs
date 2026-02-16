@@ -11,17 +11,23 @@ pub mod protocol;
 /// Module defining fundamental quantum types and structures.
 /// Includes the Qubit struct and related quantum state representations
 /// used throughout the QKD simulations.
-pub mod types;
+mod types;
+
+/// Module containing fundamental quantum constant matrices.
+/// Provides predefined quantum gates and operations used in QKD protocols,
+/// including identity (I), Hadamard (H), Pauli-X (X), and Y-basis Hadamard (H_Y) matrices.
+pub mod constants;
 
 /// Module providing utility functions and common quantum operations.
 /// Contains mathematical utilities, basis matrices (I, H, H_Y), and
 /// helper functions like shuffle_and_split for protocol execution.
-pub mod utils;
+pub mod helpers;
 
-use crate::participants::{Receiver, Sender};
-use crate::protocol::{PublicDiscussionResult, QExecutionResult, QKD};
-use crate::types::Qubit;
-use crate::utils::{shuffle_and_split, H, H_Y, I};
+use constants::{H, H_Y, I};
+use helpers::shuffle_and_split;
+use participants::{Receiver, Sender};
+use protocol::{PublicDiscussionResult, QExecutionResult, QKD};
+pub use types::{ComplexMatrix, Qubit};
 
 /// Builds and configures a QKD instance for the BB84 protocol.
 ///
@@ -81,13 +87,6 @@ pub fn build_b92() -> QKD {
         .build()
 }
 
-/// Performs the public basis discussion specific to the B92 protocol.
-///
-/// # Arguments
-/// * `results` - Vector of execution results from the B92 protocol.
-///
-/// # Returns
-/// A `PublicDiscussionResult` containing the results of the public discussion phase.
 fn public_basis_discussion_b92(results: &Vec<QExecutionResult>) -> PublicDiscussionResult {
     let mut results = results.clone();
     let bob_values: Vec<bool> = results.iter().map(|x| x.bob_value).collect();

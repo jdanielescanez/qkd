@@ -1,37 +1,48 @@
 use clap::Parser;
 use csv::Writer;
 use std::collections::HashMap;
-use std::process;
 
 use qkd::protocol::{QKDResult, QKD};
 use qkd::{build_b92, build_bb84, build_six_state};
 
+// TODO: Separar main y lib
 /// QKD Simulator CLI
 #[derive(Parser, Debug)]
-#[command(version, about = "A Quantum Key Distribution simulator developed in Rust", long_about = None)]
+#[command(
+    version,
+    about = "A Quantum Key Distribution simulator developed in Rust",
+    after_help = "\
+EXAMPLES:
+    qkd -p BB84,SixState,B92 -s 10,100,1000 -i 0.001,0.01,0.1 -r 5 -n 0,0.001,0.01 -c 0.9999999999,0.999999999 -o output/example.csv",
+    long_about = None
+)]
 struct Args {
-    /// Name of protocol to simulate
-    #[arg(short, long, required = true, num_args = 1.., value_parser = parse_protocol_tag)]
+    /// List of protocols to simulate (separated by commas)
+    #[arg(short, long, required = true, value_parser = parse_protocol_tag, value_delimiter = ',')]
     protocol: Vec<String>,
 
-    /// Number of qubits to send
-    #[arg(short, long, default_values_t = vec![1000], num_args = 1..)]
-    number_of_qubits: Vec<usize>,
+    /// List of numbers of qubits to send (separated by commas)
+    #[arg(short, long, default_values_t = vec![1000], value_delimiter = ',')]
+    size: Vec<usize>,
 
-    /// Rate of intercepted qubits by Eve
-    #[arg(short, long, default_values_t = vec![0.0], num_args = 1.., value_parser = parse_rate)]
+    /// List of rates of intercepted qubits by Eve (separated by commas)
+    #[arg(short, long, default_values_t = vec![0.0], value_parser = parse_rate, value_delimiter = ',')]
     interception_rate: Vec<f64>,
 
     /// Number of repetitions by experiment
     #[arg(short, long, default_value_t = 1)]
     repetitions: usize,
 
-    /// Print results
-    #[arg(short, long, default_value_t = false)]
-    quiet: bool,
+    /// List of probabilities of error in the quantum channel (separated by commas)
+    #[arg(short, long, default_values_t = vec![0.0], value_parser = parse_rate, value_delimiter = ',')]
+    noise_probability: Vec<f64>,
+
+    /// List of confidence levels to successfully detect eveasdropping (separated by commas)
+    #[arg(short, long, default_values_t = vec![1.0 - 10.0_f64.powf(-10.0)], value_parser = parse_rate, value_delimiter = ',')]
+    confidence: Vec<f64>,
 
     /// Output CSV file path
-    #[arg(short, long)]
+    #[arg(short, long, required = true)]
     output: Option<String>,
 }
 
@@ -48,6 +59,8 @@ struct ExperimentResult {
     protocol_tag: String,
     n_qubits: usize,
     interception_rate: f64,
+    noise: f64,
+    confidence: f64,
     result: QKDResult,
 }
 
@@ -62,53 +75,63 @@ struct ExperimentResult {
 /// # Returns
 /// A vector of `ExperimentResult` structs, each representing the result of a single experiment.
 fn run_experiment(
-    protocol: Vec<&QKD>,
-    number_of_qubits: Vec<usize>,
-    interception_rate: Vec<f64>,
+    protocols: &Vec<&QKD>,
+    number_of_qubits: &Vec<usize>,
+    interception_rates: &Vec<f64>,
+    noise_probabilities: &Vec<f64>,
+    confidences: &Vec<f64>,
     repetitions: usize,
 ) -> Vec<ExperimentResult> {
-    let protocol_ref = &protocol;
-    let number_of_qubits_ref = &number_of_qubits;
-    let interception_rate_ref = &interception_rate;
-    let repetitions_ref = &repetitions;
-    let all_combinations = protocol_ref.iter().flat_map(|protocol_tag| {
-        number_of_qubits_ref.iter().flat_map(move |n_qubits| {
-            interception_rate_ref
+    let all_combinations = protocols.into_iter().flat_map(|protocol_tag| {
+        number_of_qubits.iter().flat_map(move |n_qubits| {
+            interception_rates
                 .iter()
                 .flat_map(move |interception_rate| {
-                    (0..*repetitions_ref).map(move |repetition| {
-                        (protocol_tag, n_qubits, interception_rate, repetition)
+                    noise_probabilities.iter().flat_map(move |noise| {
+                        confidences.iter().flat_map(move |confidence| {
+                            (0..repetitions).map(move |repetition| {
+                                (
+                                    protocol_tag,
+                                    *n_qubits,
+                                    *interception_rate,
+                                    *noise,
+                                    *confidence,
+                                    repetition,
+                                )
+                            })
+                        })
                     })
                 })
         })
     });
 
     all_combinations
-        .map(|(protocol, &n_qubits, &interception_rate, repetition)| {
-            let id = format!(
-                "{}_{}_{}-{}",
-                protocol.get_name(),
-                n_qubits,
-                interception_rate,
-                repetition
-            );
+        .map(
+            |(protocol, number_of_qubits, interception_rate, noise, confidence, repetition)| {
+                let id = format!(
+                    "{}_{}_{}_{}_{}-{}",
+                    protocol.get_name(),
+                    number_of_qubits,
+                    interception_rate,
+                    noise,
+                    confidence,
+                    repetition
+                );
 
-            ExperimentResult {
-                id,
-                protocol_tag: protocol.get_name(),
-                n_qubits,
-                interception_rate,
-                result: protocol.run(n_qubits, interception_rate),
-            }
-        })
+                ExperimentResult {
+                    id,
+                    protocol_tag: protocol.get_name(),
+                    n_qubits: number_of_qubits,
+                    interception_rate,
+                    noise,
+                    confidence,
+                    result: protocol.run(number_of_qubits, interception_rate, noise, confidence),
+                }
+            },
+        )
         .collect()
 }
 
-/// Returns a map of available QKD protocol configurations.
-///
-/// # Returns
-/// A `HashMap` where the keys are protocol names and
-/// the values are pre-configured `QKD` instances for each protocol.
 fn build_all_available_protocols() -> HashMap<String, QKD> {
     HashMap::from([
         ("BB84".to_string(), build_bb84()),
@@ -139,41 +162,8 @@ fn parse_rate(s: &str) -> Result<f64, String> {
     Err(format!("All rates must be between 0.0 and 1.0"))
 }
 
-fn print_aligned_row(columns: &[String]) {
-    println!(
-        "{:<20} {:<10} {:>15} {:>18} {:>10} {:>20} {:>10} {:>20} {:>10}",
-        columns[0],
-        columns[1],
-        columns[2],
-        columns[3],
-        columns[4],
-        columns[5],
-        columns[6],
-        columns[7],
-        columns[8],
-    );
-}
-
 fn main() {
     let args = Args::parse();
-    let results_header = [
-        "id".to_string(),
-        "PROTOCOL".to_string(),
-        "number_of_qubits".to_string(),
-        "interception_rate".to_string(),
-        "time_μs".to_string(),
-        "is_considered_secure".to_string(),
-        "key_length".to_string(),
-        "eve_knowledge".to_string(),
-        "QBER".to_string(),
-    ];
-
-    if !args.quiet {
-        print_aligned_row(&results_header);
-    } else if args.output.is_none() {
-        eprintln!("Error: The `--output` argument is required when `--quiet` is enabled.");
-        process::exit(1);
-    }
 
     let mut writer = if let Some(output_path) = &args.output {
         Some(Writer::from_path(output_path).unwrap())
@@ -182,26 +172,44 @@ fn main() {
     };
 
     if let Some(w) = &mut writer {
-        let _ = w.write_record(&results_header);
+        let header = [
+            "id",
+            "protocol",
+            "number_of_qubits",
+            "interception_rate",
+            "noise",
+            "confidence",
+            "time_μs",
+            "is_considered_secure",
+            "key_length",
+            "eve_knowledge",
+            "measured_qber",
+            "final_key_qber",
+        ];
+
+        let _ = w.write_record(&header);
     }
 
     let Args {
         protocol,
-        number_of_qubits,
+        size,
         interception_rate,
         repetitions,
-        quiet,
+        noise_probability,
+        confidence,
         ..
     } = args;
 
     let available_protocols = build_all_available_protocols();
     let results = run_experiment(
-        protocol
+        &protocol
             .iter()
             .map(|tag| &available_protocols[tag])
             .collect(),
-        number_of_qubits,
-        interception_rate,
+        &size,
+        &interception_rate,
+        &noise_probability,
+        &confidence,
         repetitions,
     );
 
@@ -210,6 +218,8 @@ fn main() {
         protocol_tag,
         n_qubits,
         interception_rate,
+        noise,
+        confidence,
         result,
     } in results
     {
@@ -218,6 +228,8 @@ fn main() {
             protocol_tag,
             n_qubits.to_string(),
             interception_rate.to_string(),
+            noise.to_string(),
+            confidence.to_string(),
             result.elapsed_time.to_string(),
             result.is_considered_secure.to_string(),
             result
@@ -225,17 +237,15 @@ fn main() {
                 .as_ref()
                 .map_or("None".to_string(), |v| v.to_string()),
             result.eve_knowledge.to_string(),
+            result.measured_qber.to_string(),
             result
-                .quantum_bit_error_rate
+                .final_key_qber
                 .as_ref()
                 .map_or("None".to_string(), |v| v.to_string()),
         ];
 
         if let Some(w) = &mut writer {
             let _ = w.write_record(&result);
-        }
-        if !quiet {
-            print_aligned_row(&result);
         }
     }
 }

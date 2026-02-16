@@ -1,6 +1,8 @@
+use crate::constants::{H, I, X};
+use crate::helpers::{rand_float, shuffle_and_split};
 use crate::participants::{Receiver, Sender};
-use crate::utils::{rand_float, shuffle_and_split, H, I};
 use bon::Builder;
+use statrs::distribution::{ContinuousCDF, Normal};
 use std::time::Instant;
 
 /// Represents the result of a single quantum execution round in a QKD protocol.
@@ -72,7 +74,10 @@ pub struct QKDResult {
 
     /// Quantum Bit Error Rate (QBER) of the final generated key.
     /// If the protocol is aborted, this is `None`.
-    pub quantum_bit_error_rate: Option<f64>,
+    pub final_key_qber: Option<f64>,
+
+    /// Quantum Bit Error Rate (QBER) of the public values.
+    pub measured_qber: f64,
 
     /// Estimated fraction of the final key known by an eavesdropper (Eve).
     pub eve_knowledge: f64,
@@ -137,31 +142,40 @@ impl QKD {
     ///
     /// A `QKDResult` containing the protocol outcome, including timing,
     /// security status, key metrics, and estimated eavesdropping knowledge.
-    pub fn run(&self, number_of_qubits: usize, interception_rate: f64) -> QKDResult {
+    pub fn run(
+        &self,
+        number_of_qubits: usize,
+        interception_rate: f64,
+        noise: f64,
+        confidence: f64,
+    ) -> QKDResult {
         let initial_time = Instant::now();
         let results = (0..number_of_qubits)
             .into_iter()
-            .map(|_| self.quantum_communication(interception_rate))
+            .map(|_| self.quantum_communication(interception_rate, noise))
             .collect::<Vec<QExecutionResult>>();
 
         let discussion_result = (self.public_basis_discussion)(&results);
         let results = discussion_result.results;
 
-        let is_considered_secure = self.check_public_values(
+        let (is_considered_secure, measured_qber) = self.check_public_values(
             discussion_result.alice_public_values,
             discussion_result.bob_public_values,
+            noise,
+            confidence,
         );
 
         let mut eve_knowledge = 0.0;
-        let (mut quantum_bit_error_rate, mut key_length) = (None, None);
+        let mut final_key_qber = None;
+        let mut key_length = None;
         if is_considered_secure {
             let ((alice_secret_values, bob_secret_values), eve_secret_values): (
                 (Vec<bool>, Vec<bool>),
                 Vec<Option<bool>>,
             ) = discussion_result
                 .indexes_to_key
-                .into_iter()
-                .map(|i| {
+                .iter()
+                .map(|&i| {
                     (
                         (results[i].alice_value, results[i].bob_value),
                         results[i].eve_value,
@@ -188,7 +202,7 @@ impl QKD {
                     acc
                 });
 
-            quantum_bit_error_rate = Some(mismatched_bits / key_length.unwrap() as f64);
+            final_key_qber = Some(mismatched_bits / key_length.unwrap() as f64);
             eve_knowledge = absolute_eve_knowledge / key_length.unwrap() as f64;
         }
         let elapsed_time = initial_time.elapsed().as_micros();
@@ -197,7 +211,8 @@ impl QKD {
             elapsed_time,
             is_considered_secure,
             key_length,
-            quantum_bit_error_rate,
+            measured_qber,
+            final_key_qber,
             eve_knowledge,
         }
     }
@@ -212,7 +227,7 @@ impl QKD {
     /// # Returns
     ///
     /// A `QExecutionResult` containing the values and bases chosen by Alice, Bob, and Eve.
-    fn quantum_communication(&self, interception_rate: f64) -> QExecutionResult {
+    fn quantum_communication(&self, interception_rate: f64, noise: f64) -> QExecutionResult {
         // Alice
         let (mut qubit, alice_value) = (self.alice.prepare)();
         let alice_basis = (self.alice.change_basis)(&mut qubit, &self.alice.posible_basis);
@@ -227,6 +242,11 @@ impl QKD {
                 &mut qubit,
                 &self.eve.posible_basis[eve_basis.unwrap()],
             );
+        }
+
+        // Perform bit-flip
+        if rand_float() < noise {
+            qubit.apply_transformation(&X);
         }
 
         // Bob
@@ -257,11 +277,25 @@ impl QKD {
         &self,
         alice_public_values: Vec<bool>,
         bob_public_values: Vec<bool>,
-    ) -> bool {
-        alice_public_values
+        noise: f64,
+        confidence: f64,
+    ) -> (bool, f64) {
+        let number_of_qubits = alice_public_values.len() as f64;
+        let normal = Normal::standard();
+
+        let p = (1.0 + confidence) / 2.0;
+        let z = normal.inverse_cdf(p);
+
+        let threshold = noise + z / number_of_qubits.sqrt() * (noise * (1.0 - noise)).sqrt();
+
+        let measured_qber = alice_public_values
             .into_iter()
             .zip(bob_public_values)
-            .all(|(a, b)| a == b)
+            .filter(|(a, b)| a != b)
+            .count() as f64
+            / number_of_qubits;
+
+        (measured_qber <= threshold, measured_qber)
     }
 }
 

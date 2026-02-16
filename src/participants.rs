@@ -1,5 +1,6 @@
+use crate::constants::X;
+use crate::helpers::{rand_bool, rand_choose, rand_float};
 use crate::types::{ComplexMatrix, Qubit};
-use crate::utils::{rand_bool, rand_choose, rand_float, X};
 use bon::Builder;
 
 /// Quantum sender entity in a QKD protocol.

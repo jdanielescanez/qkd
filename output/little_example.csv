@@ -1,0 +1,2 @@
+id,protocol,number_of_qubits,interception_rate,noise,confidence,time_μs,is_considered_secure,key_length,eve_knowledge,measured_qber,final_key_qber
+BB84_1000_0_0_0.9999999999-0,BB84,1000,0,0,0.9999999999,2526,true,245,0,0,0

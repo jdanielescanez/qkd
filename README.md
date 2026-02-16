@@ -55,41 +55,46 @@ Utility functions for quantum operations, such as `shuffle_and_split` and basis 
 
 ### As a library
 ```rust
-use qkd::{run_bb84, run_six_state, run_b92};
+use qkd::{build_bb84, build_six_state, build_b92};
+
+const NUMBER_OF_QUBITS: usize = 1000;
+const INTERCEPTION_RATE: f64 = 0.01;
+const NOISE: f64 = 0.0;
+const CONFIDENCE: f64 = 0.9999999999;
 
 fn main() {
-    let result = run_bb84(1000, 0.01);
+    let result = build_bb84().run(NUMBER_OF_QUBITS, INTERCEPTION_RATE, NOISE, CONFIDENCE);
     println!("BB84 Result: {:?}", result);
 
-    let result = run_six_state(1000, 0.01);
+    let result = build_six_state().run(NUMBER_OF_QUBITS, INTERCEPTION_RATE, NOISE, CONFIDENCE);
     println!("Six-State Result: {:?}", result);
-    
-    let result = run_b92(1000, 0.01);
+
+    let result = build_b92().run(NUMBER_OF_QUBITS, INTERCEPTION_RATE, NOISE, CONFIDENCE);
     println!("B92 Result: {:?}", result);
 }
 ```
 
-This structs contain the results of a QKD protocol run, including execution time, security status, final key length, quantum bit error rate (QBER), and Eve's estimated knowledge of the key.
-
+This struct contains the results of a QKD protocol execution, including execution time, security status, final key length, quantum bit error rate (QBER) for both the final key and public values, and the estimated fraction of the key known by an eavesdropper (Eve).
 
 ### As a binary
 
 Execute the simulator using the following command:
 
 ```
-qkd --protocol <protocol> [OPTIONS]
+qkd --protocol <protocol> --output <file_name> [OPTIONS]
 ```
 
 #### Options
 
-| Option                     | Description                                                                                     | Default Value |
-|----------------------------|-------------------------------------------------------------------------------------------------|---------------|
-| `--protocol`, `-p`         | QKD protocol to simulate (`BB84`, `SixState`, `B92`) [required]                                | -              |
-| `--number-of-qubits`, `-n` | Number of qubits to send in the simulation.                                                    | `1000`        |
-| `--interception-rate`, `-i`| Interception rate of qubits by Eve (value between `0.0` and `1.0`).                           | `0.0`         |
-| `--repetitions`, `-r`      | Number of repetitions of the experiment.                                                       | `1`           |
-| `--quiet`, `-q`             | Suppress console output.                                                                        | `false`       |
-| `--output`, `-o`           | Path to the CSV file where results will be saved (required if `--quiet` is enabled).            | None          |
+| Option                     | Description                                                                                     | Default Value                     |
+|----------------------------|-------------------------------------------------------------------------------------------------|-----------------------------------|
+| `--protocol`, `-p`         | Name of protocol to simulate (`BB84`, `SixState`, `B92`) [required]                             | -                                 |
+| `--size`, `-s`             | Number of qubits to send                                                                         | `1000`                            |
+| `--interception-rate`, `-i`| Rate of intercepted qubits by Eve (value between `0.0` and `1.0`)                               | `0.0`                             |
+| `--noise-probability`, `-n`      | Probability of error in the quantum channel                                                    | `0.0`                             |
+| `--confidence`, `-c`            | Confidence level to successfully detect eavesdropping                                          | `0.9999999999`      |
+| `--repetitions`, `-r`      | Number of repetitions by experiment                                                              | `1`                               |
+| `--output`, `-o`           | Output CSV file path [required]                                                                 | -                                 |
 | `--help`, `-h` | Print help |
 | `--version`, `-V` | Print version |
 
@@ -100,51 +105,41 @@ Run the BB84 protocol with default parameters:
 qkd --protocol BB84
 ```
 
-The terminal will display the following result:
+The program will have generated a file similar to the one of the [specified path](./output/example.csv):
 
-```
-id    PROTOCOL   number_of_qubits  interception_rate    time_μs is_considered_secure key_length    eve_knowledge       QBER
-0     BB84                  1000                  0       1717                 true        251                    0          0
-```
-
----
-
-Run the B92 protocol with 2000 qubits, an interception rate of 5%, and 3 repetitions:
-```
-qkd --protocol B92 --number-of-qubits 2000 --interception-rate 0.05 --repetitions 3 --quiet --output output/example.csv
-```
-
-The terminal will not display any results, but it will have generated the following file in the [specified path](./output/example.csv):
-
-```
-id,PROTOCOL,number_of_qubits,interception_rate,time_μs,is_considered_secure,key_length,eve_knowledge,QBER
-0,B92,2000,0.05,6677,false,0,0,-1
-1,B92,2000,0.05,6331,false,0,0,-1
-2,B92,2000,0.05,9680,false,0,0,-1
+```csv
+id,protocol,number_of_qubits,interception_rate,noise,confidence,time_μs,is_considered_secure,key_length,eve_knowledge,measured_qber,final_key_qber
+BB84_1000_0_0_0.9999999999-0,BB84,1000,0,0,0.9999999999,2526,true,245,0,0,0
 ```
 ---
 
-Run multiple QKD protocols (BB84, SixState, and B92) with different parameters in a single execution:
+Run multiple QKD protocols (BB84, SixState, and B92) with different parameters:
 ```
-qkd -p BB84 SixState B92 -n 100 1000 -i 0.001 0.01 -q -o output/complete_example.csv
+qkd -p BB84 SixState B92 -s 100 10000 -i 0.001 0.01 0.1 -o output/complete_example.csv
 ```
 
 The terminal will not display any results, but it will have generated the following file in the [specified path](./output/complete_example.csv):
 
-```
-id,PROTOCOL,number_of_qubits,interception_rate,time_μs,is_considered_secure,key_length,eve_knowledge,QBER
-0,BB84,100,0.001,236,true,30,0,0
-1,BB84,100,0.01,132,true,30,0.03333333333333333,0
-2,BB84,1000,0.001,1144,true,247,0,0
-3,BB84,1000,0.01,1138,true,240,0.004166666666666667,0.008333333333333333
-4,SixState,100,0.001,259,true,19,0,0
-5,SixState,100,0.01,450,false,0,0,-1
-6,SixState,1000,0.001,1129,true,151,0,0
-7,SixState,1000,0.01,5695,true,159,0,0.012578616352201259
-8,B92,100,0.001,111,true,14,0,0
-9,B92,100,0.01,104,true,14,0,0
-10,B92,1000,0.001,4364,true,126,0,0
-11,B92,1000,0.01,5775,false,0,0,-1
+```csv
+id,protocol,number_of_qubits,interception_rate,noise,confidence,time_μs,is_considered_secure,key_length,eve_knowledge,measured_qber,final_key_qber
+BB84_100_0.001_0_0.9999999999-0,BB84,100,0.001,0,0.9999999999,543,true,25,0,0,0
+BB84_100_0.01_0_0.9999999999-0,BB84,100,0.01,0,0.9999999999,134,true,26,0,0,0
+BB84_100_0.1_0_0.9999999999-0,BB84,100,0.1,0,0.9999999999,130,false,None,0,0.041666666666666664,None
+BB84_10000_0.001_0_0.9999999999-0,BB84,10000,0.001,0,0.9999999999,20905,false,None,0,0.0007858546168958742,None
+BB84_10000_0.01_0_0.9999999999-0,BB84,10000,0.01,0,0.9999999999,14749,false,None,0,0.0012048192771084338,None
+BB84_10000_0.1_0_0.9999999999-0,BB84,10000,0.1,0,0.9999999999,14548,false,None,0,0.026835043409629045,None
+SixState_100_0.001_0_0.9999999999-0,SixState,100,0.001,0,0.9999999999,134,true,15,0,0,0
+SixState_100_0.01_0_0.9999999999-0,SixState,100,0.01,0,0.9999999999,134,true,18,0,0,0.05555555555555555
+SixState_100_0.1_0_0.9999999999-0,SixState,100,0.1,0,0.9999999999,132,false,None,0,0.0625,None
+SixState_10000_0.001_0_0.9999999999-0,SixState,10000,0.001,0,0.9999999999,17563,true,1636,0,0,0
+SixState_10000_0.01_0_0.9999999999-0,SixState,10000,0.01,0,0.9999999999,14613,false,None,0,0.0023432923257176333,None
+SixState_10000_0.1_0_0.9999999999-0,SixState,10000,0.1,0,0.9999999999,14838,false,None,0,0.028605482717520857,None
+B92_100_0.001_0_0.9999999999-0,B92,100,0.001,0,0.9999999999,153,true,14,0,0,0
+B92_100_0.01_0_0.9999999999-0,B92,100,0.01,0,0.9999999999,141,true,10,0,0,0
+B92_100_0.1_0_0.9999999999-0,B92,100,0.1,0,0.9999999999,131,false,None,0,0.07692307692307693,None
+B92_10000_0.001_0_0.9999999999-0,B92,10000,0.001,0,0.9999999999,130613,false,None,0,0.0015785319652722968,None
+B92_10000_0.01_0_0.9999999999-0,B92,10000,0.01,0,0.9999999999,112374,false,None,0,0.0071090047393364926,None
+B92_10000_0.1_0_0.9999999999-0,B92,10000,0.1,0,0.9999999999,115288,false,None,0,0.05657492354740061,None
 ```
 
 ---
