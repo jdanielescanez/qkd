@@ -50,7 +50,6 @@ impl Into<ComplexMatrix> for [[Complex64; 2]; 2] {
 impl Div<f64> for ComplexMatrix {
     type Output = Self;
     fn div(self, divisor: f64) -> Self::Output {
-        let divisor = divisor as f64;
         ComplexMatrix([
             [self.0[0][0] / divisor, self.0[0][1] / divisor],
             [self.0[1][0] / divisor, self.0[1][1] / divisor],

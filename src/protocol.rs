@@ -151,7 +151,6 @@ impl QKD {
     ) -> QKDResult {
         let initial_time = Instant::now();
         let results = (0..number_of_qubits)
-            .into_iter()
             .map(|_| self.quantum_communication(interception_rate, noise))
             .collect::<Vec<QExecutionResult>>();
 
@@ -193,11 +192,7 @@ impl QKD {
                     if a != b {
                         acc.0 += 1.0;
                     } else {
-                        acc.1 += if e.map_or(false, |e| a == e) {
-                            1.0
-                        } else {
-                            0.0
-                        }
+                        acc.1 += if e == Some(a) { 1.0 } else { 0.0 }
                     }
                     acc
                 });

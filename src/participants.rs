@@ -66,7 +66,7 @@ pub struct Receiver {
 /// The index of the selected basis in the `posible_basis` vector.
 fn default_change_basis(qubit: &mut Qubit, posible_basis: &Vec<ComplexMatrix>) -> usize {
     let (basis_id, matrix) = rand_choose(posible_basis.iter().enumerate().collect());
-    qubit.apply_transformation(&matrix);
+    qubit.apply_transformation(matrix);
     basis_id
 }
 
@@ -102,7 +102,7 @@ fn default_prepare() -> (Qubit, bool) {
 /// # Returns
 ///
 /// The classical bit value obtained from the measurement (false for |0⟩, true for |1⟩).
-fn default_measure<'a>(qubit: &'a mut Qubit) -> bool {
+fn default_measure(qubit: &mut Qubit) -> bool {
     let one_probability = qubit.get_one_coef().norm().powf(2.0);
     qubit.reset(); // |0⟩
     let measurement_result = rand_float() < one_probability;
