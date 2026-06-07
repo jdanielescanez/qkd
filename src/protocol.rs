@@ -3,6 +3,10 @@ use crate::helpers::{rand_float, shuffle_and_split};
 use crate::participants::{Receiver, Sender};
 use bon::Builder;
 use statrs::distribution::{ContinuousCDF, Normal};
+
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
 /// Represents the result of a single quantum execution round in a QKD protocol.
