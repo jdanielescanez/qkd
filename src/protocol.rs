@@ -1,5 +1,5 @@
 use crate::constants::{H, I, X};
-use crate::helpers::{rand_float, shuffle_and_split};
+use crate::rng::{rand_float, shuffle_and_split};
 use crate::participants::{Receiver, Sender};
 use bon::Builder;
 use statrs::distribution::{ContinuousCDF, Normal};

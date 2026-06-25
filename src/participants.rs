@@ -1,5 +1,5 @@
 use crate::constants::X;
-use crate::helpers::{rand_bool, rand_choose, rand_float};
+use crate::rng::{rand_bool, rand_choose, rand_float};
 use crate::types::{ComplexMatrix, Qubit};
 use bon::Builder;
 
