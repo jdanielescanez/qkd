@@ -18,15 +18,15 @@ mod types;
 /// including identity (I), Hadamard (H), Pauli-X (X), and Y-basis Hadamard (H_Y) matrices.
 pub mod constants;
 
-/// Module providing utility functions and common quantum operations.
-/// Contains mathematical utilities, basis matrices (I, H, H_Y), and
-/// helper functions like shuffle_and_split for protocol execution.
-pub mod helpers;
+/// Module providing the global seedable random number generator.
+/// Call `set_global_seed` for reproducible simulations.
+pub mod rng;
 
 use constants::{H, H_Y, I};
-use helpers::shuffle_and_split;
+use rng::shuffle_and_split;
 use participants::{Receiver, Sender};
 use protocol::{PublicDiscussionResult, QExecutionResult, QKD};
+pub use rng::set_global_seed;
 pub use types::{ComplexMatrix, Qubit};
 
 /// Builds and configures a QKD instance for the BB84 protocol.
