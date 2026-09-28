@@ -24,8 +24,8 @@ pub mod rng;
 
 use constants::{H, H_Y, I};
 use rng::shuffle_and_split;
-use participants::{Receiver, Sender};
-use protocol::{PublicDiscussionResult, QExecutionResult, QKD};
+pub use participants::{Receiver, Sender};
+pub use protocol::{PublicDiscussionResult, QExecutionResult, QKD, QKDResult};
 pub use rng::set_global_seed;
 pub use types::{ComplexMatrix, Qubit};
 

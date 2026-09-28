@@ -4,6 +4,8 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::cell::RefCell;
 
+// Credits to qcrypto crate (J. Garcia-Diaz and D. Escanez-Exposito)
+
 thread_local! {
     static GLOBAL_RNG: RefCell<ChaCha8Rng> = RefCell::new(ChaCha8Rng::from_os_rng());
 }
@@ -24,7 +26,11 @@ pub(crate) fn rand_bool() -> bool {
 }
 
 pub(crate) fn rand_choose<T: Clone>(vec: Vec<T>) -> T {
-    GLOBAL_RNG.with(|rng| vec.choose(&mut *rng.borrow_mut()).cloned().expect("Vec cannot be empty"))
+    GLOBAL_RNG.with(|rng| {
+        vec.choose(&mut *rng.borrow_mut())
+            .cloned()
+            .expect("Vec cannot be empty")
+    })
 }
 
 pub(crate) fn shuffle_and_split<T: Clone>(mut vector: Vec<T>) -> (Vec<T>, Vec<T>) {

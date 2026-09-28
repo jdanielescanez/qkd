@@ -35,8 +35,8 @@ Implements the core Quantum Key Distribution protocols. Contains the main `QKD` 
 ### `constants`
 Contains fundamental quantum constant matrices. Provides predefined quantum gates (`I`, `H`, `X`, `H_Y`) used in QKD protocols for state transformations and measurements.
 
-### `helpers`
-Provides utility functions and common quantum operations. Contains mathematical utilities and helper functions like `shuffle_and_split` for protocol execution and data processing.
+### `rng`
+Provides the global seedable random number generator used throughout the simulations. Call `set_global_seed` for reproducible results.
 
 ---
 ## Example
@@ -64,6 +64,38 @@ fn main() {
 ```
 
 These structs contain the results of a QKD protocol execution, including execution time, security status, final key length, quantum bit error rate (QBER) for both the final key and public values, and the estimated fraction of the key known by an eavesdropper (Eve).
+
+### Understanding `noise` and `confidence`
+
+`noise` is not just a lower bound on the tolerated error rate: it is the *exact* per-bit error
+probability that the security check assumes to be true in the absence of eavesdropping (the
+null hypothesis of a one-sided statistical test). The tolerance around it scales with
+`sqrt(noise * (1 - noise))`, and `confidence` controls how many standard deviations of that
+tolerance are allowed.
+
+**When `noise = 0.0` (as in the example above), that tolerance is exactly `0.0`, so `confidence`
+has no effect at all**: the check degenerates into requiring the publicly disclosed values to
+match *exactly*. This is intentional — a channel declared to have zero noise should never
+produce an error — but it also means a single, one-off disturbance (from Eve or otherwise) is
+enough to make `is_considered_secure` `false`. If you want `confidence` to provide real slack,
+set `noise` to a small positive value that reflects your channel's expected imperfection
+(e.g. `0.01`) instead of `0.0`.
+
+### Understanding `eve_knowledge`
+
+`eve_knowledge` is a **lower bound**, not an exact measurement, on the fraction of the final
+key Eve knows. A final-key bit is only credited to Eve when: she intercepted that round, *and*
+Alice's and Bob's values for it agree (i.e. it did not contribute to `final_key_qber`), *and*
+her measured value matches theirs. Bits where Alice and Bob disagree are excluded from the
+numerator (whether the disagreement came from noise or from Eve's own interference is not
+distinguished), even though Eve may have measured those bits correctly too — so
+`eve_knowledge` can understate Eve's true knowledge whenever `final_key_qber > 0.0`.
+
+`eve_knowledge` is also only meaningful when `is_considered_secure` is `true`: if the protocol
+is aborted, it is left at its default `0.0` instead of becoming unavailable like `key_length`
+and `final_key_qber` do — so a `0.0` value does not by itself mean "Eve learned nothing", it
+may just mean the run was aborted before this metric was computed. Always check
+`is_considered_secure` before interpreting `eve_knowledge`.
 
 ### Build your own protocols
 

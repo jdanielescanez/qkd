@@ -80,10 +80,28 @@ pub struct QKDResult {
     /// If the protocol is aborted, this is `None`.
     pub final_key_qber: Option<f64>,
 
-    /// Quantum Bit Error Rate (QBER) of the public values.
+    /// Quantum Bit Error Rate (QBER) of the publicly disclosed values, i.e. the fraction of
+    /// disclosed bits where Alice and Bob disagree. Compared against a threshold derived from
+    /// `noise` and `confidence` to decide `is_considered_secure` — see [`QKD::run`] for how
+    /// that threshold is computed and why it becomes exact-equality-to-`noise` when
+    /// `noise == 0.0`.
     pub measured_qber: f64,
 
     /// Estimated fraction of the final key known by an eavesdropper (Eve).
+    ///
+    /// This only counts a key bit as "known by Eve" when Eve intercepted that round *and*
+    /// Alice's and Bob's final values for it agree (i.e. it did not contribute to
+    /// `final_key_qber`) *and* Eve's measured value matches theirs. Bits where Alice and Bob
+    /// disagree are excluded from the count of bits Eve is credited with knowing, even though
+    /// Eve may have measured them correctly — that disagreement could stem from noise or from
+    /// Eve's own interference, and the two cases are not distinguished. Consequently, this
+    /// value is a **lower bound** on Eve's true knowledge whenever `final_key_qber > 0.0`, not
+    /// an exact count.
+    ///
+    /// Also note this field is only meaningful when `is_considered_secure` is `true`: when the
+    /// protocol is aborted, `eve_knowledge` is left at its default `0.0` rather than becoming
+    /// `None` (unlike `key_length` and `final_key_qber`), so a bare `0.0` does not necessarily
+    /// mean Eve learned nothing — check `is_considered_secure` first.
     pub eve_knowledge: f64,
 }
 
@@ -141,6 +159,21 @@ impl QKD {
     ///
     /// * `number_of_qubits` - Number of qubits to use in the protocol.
     /// * `interception_rate` - Probability (0.0 to 1.0) that Eve intercepts a qubit.
+    /// * `noise` - Expected bit-flip probability of the channel in the absence of
+    ///   eavesdropping (the null hypothesis tested against the publicly disclosed values).
+    ///   This is not just a lower bound on the tolerated error rate: it is the exact value
+    ///   the statistical test assumes to be true, and its own uncertainty scales with
+    ///   `sqrt(noise * (1.0 - noise))`.
+    ///   **Important:** when `noise == 0.0`, that uncertainty term is exactly `0.0`, so the
+    ///   accepted error threshold collapses to `0.0` regardless of `confidence` — any single
+    ///   mismatch between Alice's and Bob's publicly disclosed values will make the protocol
+    ///   be considered insecure. This is intentional (a channel declared to have zero noise
+    ///   is expected to never produce an error), but it means `confidence` has no smoothing
+    ///   effect at `noise = 0.0`. Use a small positive `noise` (e.g. `0.01`) to model a
+    ///   realistic imperfect channel and let `confidence` provide real tolerance.
+    /// * `confidence` - Statistical confidence level (0.0 to 1.0, e.g. `0.99`) for the
+    ///   one-sided test of whether the measured QBER is consistent with `noise`. Only has an
+    ///   effect when `noise > 0.0` (see above).
     ///
     /// # Returns
     ///
@@ -153,6 +186,19 @@ impl QKD {
         noise: f64,
         confidence: f64,
     ) -> QKDResult {
+        assert!(
+            !self.alice.posible_basis.is_empty(),
+            "Alice's posible_basis must not be empty"
+        );
+        assert!(
+            !self.bob.posible_basis.is_empty(),
+            "Bob's posible_basis must not be empty"
+        );
+        assert!(
+            !self.eve.posible_basis.is_empty(),
+            "Eve's posible_basis must not be empty"
+        );
+
         let initial_time = Instant::now();
         let results = (0..number_of_qubits)
             .map(|_| self.quantum_communication(interception_rate, noise))
@@ -188,6 +234,11 @@ impl QKD {
 
             key_length = Some(alice_secret_values.len());
 
+            // For each final-key bit: if Alice and Bob disagree, count it towards
+            // `final_key_qber` only — Eve's value is not consulted, so an eavesdropped bit
+            // that also happens to be a mismatch is *not* credited to `eve_knowledge` (see
+            // the doc comment on `QKDResult::eve_knowledge` for why this makes it a lower
+            // bound rather than an exact count).
             let (mismatched_bits, absolute_eve_knowledge) = alice_secret_values
                 .into_iter()
                 .zip(bob_secret_values)
@@ -262,16 +313,31 @@ impl QKD {
         )
     }
 
-    /// Checks if the public values announced by Alice and Bob match.
+    /// Checks if the public values announced by Alice and Bob are consistent with the
+    /// expected channel `noise`, at the given statistical `confidence` level.
+    ///
+    /// This performs a one-sided hypothesis test: under the null hypothesis that the true
+    /// per-bit error probability equals `noise`, the accepted upper bound on the observed
+    /// QBER is `noise + z * sqrt(noise * (1 - noise) / sample_size)`, where `z` is the
+    /// `confidence`-quantile of the standard normal distribution. The measured QBER is
+    /// compared against that bound.
+    ///
+    /// Note the term `sqrt(noise * (1 - noise))` is exactly `0.0` when `noise` is `0.0` or
+    /// `1.0`: at those boundary values the hypothesis has no variance, so the threshold
+    /// collapses to `noise` itself and `confidence` has no effect (see [`QKD::run`]).
     ///
     /// # Arguments
     ///
     /// * `alice_public_values` - Public values announced by Alice.
     /// * `bob_public_values` - Public values announced by Bob.
+    /// * `noise` - Expected per-bit error probability under the "no eavesdropping" hypothesis.
+    /// * `confidence` - Statistical confidence level for the test.
     ///
     /// # Returns
     ///
-    /// `true` if all public values match, indicating no eavesdropping was detected.
+    /// A tuple `(is_considered_secure, measured_qber)`. If there are no publicly disclosed
+    /// values to compare (`sample_size == 0`), the protocol cannot be statistically validated
+    /// and this returns `(false, 0.0)`.
     fn check_public_values(
         &self,
         alice_public_values: Vec<bool>,
@@ -279,20 +345,27 @@ impl QKD {
         noise: f64,
         confidence: f64,
     ) -> (bool, f64) {
-        let number_of_qubits = alice_public_values.len() as f64;
+        let sample_size = alice_public_values.len() as f64;
+        // No publicly disclosed values means there is nothing to statistically
+        // validate, so the protocol cannot be considered secure. Without this
+        // guard, `sample_size == 0.0` would produce NaN/inf below.
+        if sample_size == 0.0 {
+            return (false, 0.0);
+        }
+
         let normal = Normal::standard();
 
         let p = (1.0 + confidence) / 2.0;
         let z = normal.inverse_cdf(p);
 
-        let threshold = noise + z / number_of_qubits.sqrt() * (noise * (1.0 - noise)).sqrt();
+        let threshold = noise + z / sample_size.sqrt() * (noise * (1.0 - noise)).sqrt();
 
         let measured_qber = alice_public_values
             .into_iter()
             .zip(bob_public_values)
             .filter(|(a, b)| a != b)
             .count() as f64
-            / number_of_qubits;
+            / sample_size;
 
         (measured_qber <= threshold, measured_qber)
     }
