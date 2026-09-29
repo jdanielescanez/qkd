@@ -409,3 +409,174 @@ fn default_public_basis_discussion(results: &Vec<QExecutionResult>) -> PublicDis
         results: results.to_vec(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::participants::{Receiver, Sender};
+    use crate::rng::set_global_seed;
+
+    fn minimal_qkd() -> QKD {
+        let alice = Sender::builder().posible_basis(vec![I]).build();
+        let bob = Receiver::builder().posible_basis(vec![I]).build();
+        QKD::builder()
+            .name("Test".to_string())
+            .alice(alice)
+            .bob(bob)
+            .build()
+    }
+
+    #[test]
+    fn check_public_values_empty_sample_is_insecure_with_zero_qber() {
+        let qkd = minimal_qkd();
+        let (secure, qber) = qkd.check_public_values(vec![], vec![], 0.0, 0.99);
+        assert!(!secure);
+        assert_eq!(qber, 0.0);
+        assert!(!qber.is_nan());
+    }
+
+    #[test]
+    fn check_public_values_no_mismatches_is_secure() {
+        let qkd = minimal_qkd();
+        let values = vec![true, false, true, false, true];
+        let (secure, qber) = qkd.check_public_values(values.clone(), values, 0.0, 0.99);
+        assert!(secure);
+        assert_eq!(qber, 0.0);
+    }
+
+    #[test]
+    fn check_public_values_any_mismatch_is_insecure_when_noise_is_zero() {
+        let qkd = minimal_qkd();
+        let alice_values = vec![true; 1000];
+        let mut bob_values = alice_values.clone();
+        bob_values[0] = false; // a single mismatch out of 1000
+        let (secure, qber) = qkd.check_public_values(alice_values, bob_values, 0.0, 0.5);
+        assert!(!secure);
+        assert!((qber - 0.001).abs() < 1e-9);
+    }
+
+    #[test]
+    fn check_public_values_confidence_has_no_effect_when_noise_is_zero() {
+        let qkd = minimal_qkd();
+        let alice_values = vec![true; 100];
+        let bob_values = alice_values.clone();
+        let (secure_low, _) =
+            qkd.check_public_values(alice_values.clone(), bob_values.clone(), 0.0, 0.5);
+        let (secure_high, _) = qkd.check_public_values(alice_values, bob_values, 0.0, 0.9999999999);
+        assert_eq!(secure_low, secure_high);
+    }
+
+    #[test]
+    fn check_public_values_zero_confidence_gives_zero_tolerance_above_noise() {
+        // confidence = 0.0 -> z = inverse_cdf(0.5) = 0.0, so the threshold collapses to
+        // exactly `noise`, with no statistical margin at all -- mirroring the
+        // noise = 0.0 edge case, but for a different reason (z = 0 instead of zero
+        // variance). A 6% observed error rate against a 5% declared noise is a
+        // plausible sampling fluctuation that a normal confidence level accepts, but
+        // confidence = 0.0 rejects outright.
+        let qkd = minimal_qkd();
+        let n = 1000;
+        let mismatches = 60; // 6% observed vs 5% declared noise
+        let alice_values = vec![true; n];
+        let mut bob_values = alice_values.clone();
+        for value in bob_values.iter_mut().take(mismatches) {
+            *value = false;
+        }
+        let (secure_zero_confidence, _) =
+            qkd.check_public_values(alice_values.clone(), bob_values.clone(), 0.05, 0.0);
+        let (secure_normal_confidence, _) =
+            qkd.check_public_values(alice_values, bob_values, 0.05, 0.99);
+        assert!(!secure_zero_confidence);
+        assert!(secure_normal_confidence);
+    }
+
+    #[test]
+    fn check_public_values_tolerates_expected_noise_within_confidence() {
+        let qkd = minimal_qkd();
+        let n = 2000;
+        let mismatches = 100; // 5% observed, matching the 5% declared noise
+        let alice_values = vec![true; n];
+        let mut bob_values = alice_values.clone();
+        for value in bob_values.iter_mut().take(mismatches) {
+            *value = false;
+        }
+        let (secure, qber) = qkd.check_public_values(alice_values, bob_values, 0.05, 0.99);
+        assert!(secure);
+        assert!((qber - 0.05).abs() < 1e-9);
+    }
+
+    #[test]
+    fn check_public_values_threshold_matches_the_documented_formula() {
+        // Independently recompute `noise + z * sqrt(noise * (1 - noise) / n)` (the
+        // formula documented on this function) and probe a QBER just below and just
+        // above it, to catch any accidental change to the arithmetic (e.g. a stray
+        // `*` <-> `/` or `-` <-> `+` swap) that a loose "still secure" assertion would
+        // not notice.
+        let qkd = minimal_qkd();
+        let noise: f64 = 0.4;
+        let confidence: f64 = 0.95;
+        let n: usize = 1000;
+
+        let normal = Normal::standard();
+        let z = normal.inverse_cdf((1.0 + confidence) / 2.0);
+        let expected_threshold = noise + z / (n as f64).sqrt() * (noise * (1.0 - noise)).sqrt();
+
+        let make_values = |qber: f64| {
+            let mismatches = (qber * n as f64).round() as usize;
+            let alice_values = vec![true; n];
+            let mut bob_values = alice_values.clone();
+            for value in bob_values.iter_mut().take(mismatches) {
+                *value = false;
+            }
+            (alice_values, bob_values)
+        };
+
+        let (alice_below, bob_below) = make_values(expected_threshold - 0.005);
+        let (secure_below, _) = qkd.check_public_values(alice_below, bob_below, noise, confidence);
+        assert!(secure_below, "expected secure just below the computed threshold");
+
+        let (alice_above, bob_above) = make_values(expected_threshold + 0.005);
+        let (secure_above, _) = qkd.check_public_values(alice_above, bob_above, noise, confidence);
+        assert!(
+            !secure_above,
+            "expected insecure just above the computed threshold"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Alice's posible_basis must not be empty")]
+    fn run_panics_clearly_when_alice_basis_is_empty() {
+        let alice = Sender::builder().posible_basis(vec![]).build();
+        let bob = Receiver::builder().posible_basis(vec![I]).build();
+        let qkd = QKD::builder()
+            .name("Bad".to_string())
+            .alice(alice)
+            .bob(bob)
+            .build();
+        qkd.run(10, 0.0, 0.0, 0.99);
+    }
+
+    #[test]
+    #[should_panic(expected = "Bob's posible_basis must not be empty")]
+    fn run_panics_clearly_when_bob_basis_is_empty() {
+        let alice = Sender::builder().posible_basis(vec![I]).build();
+        let bob = Receiver::builder().posible_basis(vec![]).build();
+        let qkd = QKD::builder()
+            .name("Bad".to_string())
+            .alice(alice)
+            .bob(bob)
+            .build();
+        qkd.run(10, 0.0, 0.0, 0.99);
+    }
+
+    #[test]
+    fn run_with_zero_qubits_does_not_produce_nan() {
+        set_global_seed(1);
+        let qkd = minimal_qkd();
+        let result = qkd.run(0, 0.0, 0.0, 0.9999999999);
+        assert!(!result.measured_qber.is_nan());
+        assert!(!result.is_considered_secure);
+        assert_eq!(result.key_length, None);
+        assert_eq!(result.final_key_qber, None);
+    }
+}

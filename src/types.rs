@@ -93,3 +93,105 @@ impl Qubit {
         self.state.1
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::constants::{H, I, X};
+    use std::f64::consts::SQRT_2;
+
+    const EPS: f64 = 1e-9;
+
+    fn assert_complex_eq(actual: Complex64, expected: Complex64) {
+        assert!(
+            (actual - expected).norm() < EPS,
+            "expected {expected:?}, got {actual:?}"
+        );
+    }
+
+    #[test]
+    fn invert_identity_returns_identity() {
+        let inv = I.invert().expect("I must be invertible");
+        assert_complex_eq(inv.0[0][0], Complex64::new(1.0, 0.0));
+        assert_complex_eq(inv.0[0][1], Complex64::new(0.0, 0.0));
+        assert_complex_eq(inv.0[1][0], Complex64::new(0.0, 0.0));
+        assert_complex_eq(inv.0[1][1], Complex64::new(1.0, 0.0));
+    }
+
+    #[test]
+    fn invert_singular_matrix_returns_none() {
+        // Rows are proportional -> determinant is zero -> not invertible.
+        let singular = ComplexMatrix([
+            [Complex64::new(1.0, 0.0), Complex64::new(2.0, 0.0)],
+            [Complex64::new(2.0, 0.0), Complex64::new(4.0, 0.0)],
+        ]);
+        assert!(singular.invert().is_none());
+    }
+
+    #[test]
+    fn add_sums_matrices_entrywise() {
+        // H has non-zero off-diagonal entries, unlike I: summing I with itself leaves
+        // the off-diagonal at 0 regardless of whether it is added, subtracted or
+        // multiplied, so it can't distinguish those operators from one another.
+        let sum = H + H;
+        assert_complex_eq(sum.0[0][0], Complex64::new(2.0 / SQRT_2, 0.0));
+        assert_complex_eq(sum.0[0][1], Complex64::new(2.0 / SQRT_2, 0.0));
+        assert_complex_eq(sum.0[1][0], Complex64::new(2.0 / SQRT_2, 0.0));
+        assert_complex_eq(sum.0[1][1], Complex64::new(-2.0 / SQRT_2, 0.0));
+    }
+
+    #[test]
+    fn div_scales_matrix_entrywise() {
+        // Same rationale as above: use H (non-zero off-diagonal) so every entry,
+        // including the off-diagonal ones, is actually exercised.
+        let halved = (H + H) / 2.0;
+        assert_complex_eq(halved.0[0][0], H.0[0][0]);
+        assert_complex_eq(halved.0[0][1], H.0[0][1]);
+        assert_complex_eq(halved.0[1][0], H.0[1][0]);
+        assert_complex_eq(halved.0[1][1], H.0[1][1]);
+    }
+
+    #[test]
+    fn new_qubit_starts_in_zero_state() {
+        let qubit = Qubit::new();
+        assert_complex_eq(qubit.get_zero_coef(), Complex64::new(1.0, 0.0));
+        assert_complex_eq(qubit.get_one_coef(), Complex64::new(0.0, 0.0));
+    }
+
+    #[test]
+    fn x_gate_flips_zero_to_one() {
+        let mut qubit = Qubit::new();
+        qubit.apply_transformation(&X);
+        assert_complex_eq(qubit.get_zero_coef(), Complex64::new(0.0, 0.0));
+        assert_complex_eq(qubit.get_one_coef(), Complex64::new(1.0, 0.0));
+    }
+
+    #[test]
+    fn reset_returns_to_zero_state_after_transformations() {
+        let mut qubit = Qubit::new();
+        qubit.apply_transformation(&X);
+        qubit.apply_transformation(&H);
+        qubit.reset();
+        assert_complex_eq(qubit.get_zero_coef(), Complex64::new(1.0, 0.0));
+        assert_complex_eq(qubit.get_one_coef(), Complex64::new(0.0, 0.0));
+    }
+
+    #[test]
+    fn hadamard_applied_twice_is_identity() {
+        let mut qubit = Qubit::new();
+        qubit.apply_transformation(&H);
+        qubit.apply_transformation(&H);
+        assert_complex_eq(qubit.get_zero_coef(), Complex64::new(1.0, 0.0));
+        assert_complex_eq(qubit.get_one_coef(), Complex64::new(0.0, 0.0));
+    }
+
+    #[test]
+    fn transformations_preserve_normalization() {
+        let mut qubit = Qubit::new();
+        qubit.apply_transformation(&H);
+        qubit.apply_transformation(&X);
+        qubit.apply_transformation(&H);
+        let norm_sq = qubit.get_zero_coef().norm_sqr() + qubit.get_one_coef().norm_sqr();
+        assert!((norm_sq - 1.0).abs() < EPS);
+    }
+}

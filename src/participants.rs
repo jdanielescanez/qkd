@@ -124,3 +124,85 @@ fn default_measure(qubit: &mut Qubit) -> bool {
 fn default_try_to_restore_qubit(qubit: &mut Qubit, basis_matrix: &ComplexMatrix) {
     qubit.apply_transformation(&basis_matrix.invert().unwrap());
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::constants::{H, I};
+    use crate::rng::set_global_seed;
+
+    #[test]
+    fn default_prepare_state_always_matches_returned_value() {
+        set_global_seed(1);
+        for _ in 0..50 {
+            let (qubit, value) = default_prepare();
+            let expected_one_coef = if value { 1.0 } else { 0.0 };
+            assert!((qubit.get_one_coef().norm() - expected_one_coef).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn default_prepare_produces_both_values_over_many_runs() {
+        set_global_seed(2);
+        let values: Vec<bool> = (0..200).map(|_| default_prepare().1).collect();
+        assert!(values.iter().any(|&v| v));
+        assert!(values.iter().any(|&v| !v));
+    }
+
+    #[test]
+    fn default_change_basis_returns_index_within_bounds() {
+        set_global_seed(3);
+        let bases = vec![I, H];
+        for _ in 0..50 {
+            let mut qubit = Qubit::new();
+            let idx = default_change_basis(&mut qubit, &bases);
+            assert!(idx < bases.len());
+        }
+    }
+
+    #[test]
+    fn default_change_basis_with_single_basis_is_deterministic() {
+        set_global_seed(4);
+        let bases = vec![I];
+        let mut qubit = Qubit::new();
+        assert_eq!(default_change_basis(&mut qubit, &bases), 0);
+    }
+
+    #[test]
+    fn measuring_zero_state_always_returns_false() {
+        set_global_seed(5);
+        for _ in 0..50 {
+            let mut qubit = Qubit::new();
+            assert!(!default_measure(&mut qubit));
+        }
+    }
+
+    #[test]
+    fn measuring_one_state_always_returns_true() {
+        set_global_seed(6);
+        for _ in 0..50 {
+            let mut qubit = Qubit::new();
+            qubit.apply_transformation(&crate::constants::X);
+            assert!(default_measure(&mut qubit));
+        }
+    }
+
+    #[test]
+    fn measure_collapses_qubit_to_the_measured_computational_basis_state() {
+        set_global_seed(7);
+        let mut qubit = Qubit::new();
+        qubit.apply_transformation(&H);
+        let result = default_measure(&mut qubit);
+        let expected_one_coef = if result { 1.0 } else { 0.0 };
+        assert!((qubit.get_one_coef().norm() - expected_one_coef).abs() < 1e-9);
+    }
+
+    #[test]
+    fn try_to_restore_qubit_undoes_a_basis_change() {
+        let mut qubit = Qubit::new();
+        qubit.apply_transformation(&H);
+        default_try_to_restore_qubit(&mut qubit, &H);
+        assert!((qubit.get_zero_coef().norm() - 1.0).abs() < 1e-9);
+        assert!(qubit.get_one_coef().norm() < 1e-9);
+    }
+}

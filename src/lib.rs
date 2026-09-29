@@ -23,10 +23,10 @@ pub mod constants;
 pub mod rng;
 
 use constants::{H, H_Y, I};
-use rng::shuffle_and_split;
 pub use participants::{Receiver, Sender};
-pub use protocol::{PublicDiscussionResult, QExecutionResult, QKD, QKDResult};
+pub use protocol::{PublicDiscussionResult, QExecutionResult, QKDResult, QKD};
 pub use rng::set_global_seed;
+use rng::shuffle_and_split;
 pub use types::{ComplexMatrix, Qubit};
 
 /// Builds and configures a QKD instance for the BB84 protocol.
@@ -99,7 +99,7 @@ fn public_basis_discussion_b92(results: &Vec<QExecutionResult>) -> PublicDiscuss
 
     results.iter_mut().enumerate().for_each(|(i, result)| {
         if conclusive_indexes.contains(&i) {
-            result.bob_value = (1 - result.bob_basis) == 1;
+            result.bob_value = result.bob_basis == 0;
         }
         result.alice_value = result.alice_basis == 1;
     });
