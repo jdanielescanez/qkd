@@ -4,6 +4,18 @@
 [![Documentation](https://docs.rs/qkd/badge.svg)](https://docs.rs/qkd)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+<div align="center">
+  <a href="https://github.com/jdanielescanez/qkd">
+    <img src="https://github.com/jdanielescanez/qkd/blob/main/assets/logo.png?raw=true" alt="qkd Logo" width="150">
+  </a>
+
+  <h3 align="center">qkd</h3>
+
+  <p align="center">
+    <a href="https://docs.rs/qkd/latest/qkd/"><strong>Explore the docs »</strong></a>
+  </p>
+</div>
+
 A Rust library for simulating **Quantum Key Distribution (QKD)** protocols, including **BB84**, **Six-State**, **B92** and **your own protocols**. This crate provides a flexible and efficient way to simulate quantum key exchange, analyze security metrics, and evaluate the impact of eavesdropping.
 
 ---
