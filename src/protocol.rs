@@ -285,8 +285,7 @@ impl QKD {
         Qubit::reset_registry();
 
         // Alice
-        let (qubit, alice_value) = (self.alice.prepare)();
-        let alice_basis = (self.alice.change_basis)(&qubit, &self.alice.posible_basis);
+        let (qubit, alice_value, alice_basis) = (self.alice.prepare)(&self.alice.posible_basis);
 
         // Eve
         let mut eve_basis = None;

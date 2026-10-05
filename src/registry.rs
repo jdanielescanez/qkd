@@ -49,7 +49,6 @@ pub struct Qubit {
     index: usize,
 }
 
-#[allow(dead_code)] // create_entangled_state is wired in once BBM92 is built (later phase)
 impl Qubit {
     /// Creates a fresh single-qubit computational basis state (|0⟩/|1⟩) in the
     /// registry and returns a handle to it.

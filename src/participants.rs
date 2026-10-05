@@ -5,23 +5,30 @@ use bon::Builder;
 
 /// Quantum sender entity in a QKD protocol.
 ///
-/// This struct represents Alice's capabilities in the protocol:
-/// - Choosing from a set of possible quantum bases.
-/// - Preparing qubits in a random state.
-/// - Changing the qubit's basis before sending.
+/// This struct represents Alice's capabilities in the protocol: obtaining the qubit
+/// that will continue towards Bob (whether by preparing it directly, or by measuring
+/// her own half of an entangled pair and letting the other half collapse accordingly),
+/// along with her classical bit value and the basis index she used.
 #[doc(hidden)]
 #[derive(Builder)]
 pub struct Sender {
-    /// Available quantum bases that Alice can use to prepare and transform qubits.
+    /// Available quantum bases Alice may use.
     pub(crate) posible_basis: Vec<ComplexMatrix>,
-    /// Function to randomly change the qubit's basis before sending.
-    /// By default, it selects a random basis from `posible_basis` and applies it to the qubit.
-    #[builder(default = Box::new(default_change_basis))]
-    pub(crate) change_basis: Box<dyn Fn(&Qubit, &Vec<ComplexMatrix>) -> usize>,
-    /// Function to prepare a qubit in a random state (|0⟩ or |1⟩ with equal probability).
-    /// Returns the prepared qubit and its classical bit value.
+    /// Function that produces the qubit that continues towards Bob, Alice's classical
+    /// bit value, and the basis index she used.
+    ///
+    /// By default (`default_prepare`), this prepares a fresh qubit directly: picks a
+    /// random bit, encodes it as |0⟩/|1⟩, then picks and applies a random basis from
+    /// `posible_basis`. An entanglement-based protocol can instead provide a `prepare`
+    /// that creates an entangled pair, applies a basis to and measures *Alice's own*
+    /// half, and returns *Bob's* half (already correctly collapsed by entanglement) —
+    /// see `build_bbm92` in `lib.rs`. Fusing "prepare" and "choose a basis" into one
+    /// closure (rather than two separate steps, as `Receiver` has for `change_basis`
+    /// and `measure`) is what lets both cases share the same `quantum_communication`
+    /// pipeline with no branching: a basis choice made *before* measuring Alice's own
+    /// qubit cannot be separated from that measurement without corrupting the physics.
     #[builder(default = Box::new(default_prepare))]
-    pub(crate) prepare: Box<dyn Fn() -> (Qubit, bool)>,
+    pub(crate) prepare: Box<dyn Fn(&Vec<ComplexMatrix>) -> (Qubit, bool, usize)>,
 }
 
 /// Quantum receiver entity in a QKD protocol.
@@ -73,14 +80,22 @@ fn default_change_basis(qubit: &Qubit, posible_basis: &Vec<ComplexMatrix>) -> us
 /// Default qubit preparation function for the sender (Alice).
 ///
 /// Prepares a qubit in a computational basis state (|0⟩ or |1⟩) chosen with equal
-/// probability.
+/// probability, then picks and applies a random basis from `posible_basis`.
+///
+/// # Arguments
+///
+/// * `posible_basis` - Available quantum bases to choose from.
 ///
 /// # Returns
 ///
-/// A tuple containing the prepared qubit and its classical bit value (false for |0⟩, true for |1⟩).
-fn default_prepare() -> (Qubit, bool) {
+/// A tuple of the prepared qubit, its classical bit value (false for |0⟩, true for
+/// |1⟩), and the index of the basis applied to it.
+fn default_prepare(posible_basis: &Vec<ComplexMatrix>) -> (Qubit, bool, usize) {
     let value = rand_bool();
-    (Qubit::create_basis_state(value), value)
+    let qubit = Qubit::create_basis_state(value);
+    let (basis_id, matrix) = rand_choose(posible_basis.iter().enumerate().collect());
+    qubit.apply_local_gate(matrix);
+    (qubit, value, basis_id)
 }
 
 /// Default qubit measurement function for receivers (Bob/Eve).
@@ -119,18 +134,33 @@ mod tests {
     use crate::rng::set_global_seed;
 
     #[test]
-    fn default_prepare_state_always_matches_returned_value() {
+    fn default_prepare_basis_matches_the_value_when_measured_back_in_the_same_basis() {
         set_global_seed(1);
+        let bases = vec![I, H];
         for _ in 0..50 {
-            let (qubit, value) = default_prepare();
+            let (qubit, value, basis_id) = default_prepare(&bases);
+            // Measuring with the same basis Alice used must deterministically
+            // reproduce her value (bases are self-inverse here: I and H).
+            qubit.apply_local_gate(&bases[basis_id]);
             assert_eq!(qubit.measure(), value);
         }
     }
 
     #[test]
-    fn default_prepare_produces_both_values_over_many_runs() {
+    fn default_prepare_returns_basis_index_within_bounds() {
         set_global_seed(2);
-        let values: Vec<bool> = (0..200).map(|_| default_prepare().1).collect();
+        let bases = vec![I, H];
+        for _ in 0..50 {
+            let (_, _, basis_id) = default_prepare(&bases);
+            assert!(basis_id < bases.len());
+        }
+    }
+
+    #[test]
+    fn default_prepare_produces_both_values_over_many_runs() {
+        set_global_seed(3);
+        let bases = vec![I];
+        let values: Vec<bool> = (0..200).map(|_| default_prepare(&bases).1).collect();
         assert!(values.iter().any(|&v| v));
         assert!(values.iter().any(|&v| !v));
     }
@@ -185,9 +215,15 @@ mod tests {
 
     #[test]
     fn try_to_restore_qubit_undoes_a_basis_change() {
-        let qubit = Qubit::create_basis_state(false);
-        qubit.apply_local_gate(&H);
-        default_try_to_restore_qubit(&qubit, &H);
-        assert!(!qubit.measure());
+        // Without a fixed seed (and enough repetitions), a no-op "restore" would still
+        // pass about half the time by sheer luck, since the un-restored |+⟩ state
+        // measures to `false` with 50% probability on its own.
+        set_global_seed(8);
+        for _ in 0..30 {
+            let qubit = Qubit::create_basis_state(false);
+            qubit.apply_local_gate(&H);
+            default_try_to_restore_qubit(&qubit, &H);
+            assert!(!qubit.measure());
+        }
     }
 }

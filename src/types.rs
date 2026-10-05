@@ -315,6 +315,16 @@ mod tests {
     }
 
     #[test]
+    fn create_bell_pair_state_is_normalized_and_has_equal_weight_on_00_and_11() {
+        let state = QuantumState::create_bell_pair_state();
+        let norm_sq: f64 = state.amplitudes.iter().map(|a| a.norm_sqr()).sum();
+        assert!((norm_sq - 1.0).abs() < EPS);
+        assert_complex_eq(state.amplitudes[0], state.amplitudes[3]);
+        assert_complex_eq(state.amplitudes[1], Complex64::new(0.0, 0.0));
+        assert_complex_eq(state.amplitudes[2], Complex64::new(0.0, 0.0));
+    }
+
+    #[test]
     fn a_product_state_is_detected_as_separable() {
         // Sanity check on the separability helper itself, using (|0>+|1>)/sqrt(2) ⊗ |0>.
         let state = QuantumState {

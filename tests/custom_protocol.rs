@@ -4,9 +4,7 @@
 //! regression test for making sure these types are re-exported at the crate root.
 
 use qkd::constants::{H, H_Y, I};
-use qkd::{
-    set_global_seed, PublicDiscussionResult, QExecutionResult, QKD,
-};
+use qkd::{set_global_seed, ComplexMatrix, PublicDiscussionResult, QExecutionResult, QKD};
 use qkd::{Qubit, Receiver, Sender};
 use std::cell::Cell;
 
@@ -45,8 +43,10 @@ fn custom_six_state_replica_runs_like_the_built_in_one() {
 /// the 4 key bits).
 #[test]
 fn eve_knowledge_is_a_lower_bound_when_the_final_key_has_errors() {
+    // Only one basis (I) is in play here, so the basis index is always 0.
     let alice_prepare =
-        Box::new(|| (Qubit::create_basis_state(true), true)) as Box<dyn Fn() -> (Qubit, bool)>;
+        Box::new(|_: &Vec<ComplexMatrix>| (Qubit::create_basis_state(true), true, 0usize))
+            as Box<dyn Fn(&Vec<ComplexMatrix>) -> (Qubit, bool, usize)>;
 
     // Eve (default measure) always runs first and collapses the qubit to its true
     // value; Bob's `qubit.measure()` below just re-reads that already-collapsed,
