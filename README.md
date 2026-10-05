@@ -16,13 +16,14 @@
   </p>
 </div>
 
-A Rust library for simulating **Quantum Key Distribution (QKD)** protocols, including **BB84**, **Six-State**, **B92** and **your own protocols**. This crate provides a flexible and efficient way to simulate quantum key exchange, analyze security metrics, and evaluate the impact of eavesdropping.
+A Rust library for simulating **Quantum Key Distribution (QKD)** protocols, including **BB84**, **Six-State**, **B92**, the entanglement-based **BBM92**, and **your own protocols**. This crate provides a flexible and efficient way to simulate quantum key exchange, analyze security metrics, and evaluate the impact of eavesdropping.
 
 ---
 
 ## Features
 
-- **Multiple QKD Protocols**: Simulate BB84, Six-State, B92 and your own protocols.
+- **Multiple QKD Protocols**: Simulate BB84, Six-State, B92, BBM92 (entanglement-based) and your own protocols.
+- **Entanglement support**: A joint multi-qubit `QuantumState` representation backs every qubit, so entanglement-based protocols are first-class, not bolted on.
 - **Customizable Parameters**: Adjust the number of qubits, interception rate, noise and confidence.
 - **Security Metrics**: Calculate Quantum Bit Error Rate (QBER), key length, and Eve's knowledge.
 - **Library**: Integrate into your Rust projects.
@@ -39,7 +40,7 @@ cargo add qkd
 ## Modules
 
 ### `participants`
-Defines the `Sender` and `Receiver` structs, representing Alice, Bob, and Eve in the QKD protocol. Uses a builder pattern for flexible configuration of quantum bases and participant behaviors.
+Defines the `Sender` and `Receiver` structs, representing Alice, Bob, and Eve in the QKD protocol. Uses a builder pattern for flexible configuration of quantum bases and participant behaviors. `Sender::prepare` obtains the qubit that continues towards Bob along with Alice's classical value and the basis she used — whether by preparing it directly (BB84-style) or by measuring her own half of an entangled pair (BBM92-style); see [Build your own protocols](#build-your-own-protocols).
 
 ### `protocol`
 Implements the core Quantum Key Distribution protocols. Contains the main `QKD` struct, protocol execution logic, and result types including `QKDResult` and `PublicDiscussionResult`.
@@ -50,13 +51,16 @@ Contains fundamental quantum constant matrices. Provides predefined quantum gate
 ### `rng`
 Provides the global seedable random number generator used throughout the simulations. Call `set_global_seed` for reproducible results.
 
+### Entanglement internals
+Every qubit is backed by a joint `QuantumState` (a vector of `2^n` complex amplitudes for `n` qubits), with `Qubit` acting as a lightweight handle into it rather than owning any amplitude itself — this is what allows a `Qubit` to be part of an entangled, multi-qubit state. This machinery is internal (used by `build_bbm92`); it is not yet part of the public API for building your own entangled protocols.
+
 ---
 ## Example
 
 ### Execution
 
 ```rust
-use qkd::{build_bb84, build_six_state, build_b92};
+use qkd::{build_bb84, build_six_state, build_b92, build_bbm92};
 
 const NUMBER_OF_QUBITS: usize = 1000;
 const INTERCEPTION_RATE: f64 = 0.01;
@@ -72,6 +76,12 @@ fn main() {
 
     let result = build_b92().run(NUMBER_OF_QUBITS, INTERCEPTION_RATE, NOISE, CONFIDENCE);
     println!("B92 Result: {:?}", result);
+
+    // BBM92: the entanglement-based counterpart of BB84. A Bell pair is created each
+    // round instead of Alice preparing and sending a qubit directly, but it behaves
+    // identically from the outside (same bases, same statistics, same metrics).
+    let result = build_bbm92().run(NUMBER_OF_QUBITS, INTERCEPTION_RATE, NOISE, CONFIDENCE);
+    println!("BBM92 Result: {:?}", result);
 }
 ```
 
@@ -167,7 +177,12 @@ fn public_basis_discussion_b92(results: &Vec<QExecutionResult>) -> PublicDiscuss
 }
 
 pub fn build_b92() -> QKD {
-    let prepare_b92 = Box::new(|| (Qubit::new(), false));
+    let prepare_b92 = Box::new(|posible_basis: &Vec<ComplexMatrix>| {
+        let qubit = Qubit::create_basis_state(false);
+        let (basis_id, matrix) = rand_choose(posible_basis.iter().enumerate().collect());
+        qubit.apply_local_gate(matrix);
+        (qubit, false, basis_id)
+    });
 
     let alice = Sender::builder()
         .posible_basis(vec![I, H])
@@ -183,6 +198,37 @@ pub fn build_b92() -> QKD {
         .build()
 }
 ```
+
+`Sender::prepare` always returns the qubit that continues towards Bob, Alice's classical
+value, and the basis index she used — fusing what would otherwise be two separate steps
+("prepare" and "choose a basis") into one. This is what lets entanglement-based protocols
+share the exact same execution pipeline: `build_bbm92`'s `prepare` creates a Bell pair,
+applies a random basis to *Alice's own* half and measures it, then returns *Bob's* half —
+already left in exactly the right state by entanglement — along with Alice's value and basis:
+
+```rust
+pub fn build_bbm92() -> QKD {
+    let alice = Sender::builder()
+        .posible_basis(vec![I, H])
+        .prepare(Box::new(prepare_bbm92))
+        .build();
+    let bob = Receiver::builder().posible_basis(vec![I, H]).build();
+
+    QKD::builder().name("BBM92".to_string()).alice(alice).bob(bob).build()
+}
+
+fn prepare_bbm92(posible_basis: &Vec<ComplexMatrix>) -> (Qubit, bool, usize) {
+    let (alice_qubit, bob_qubit) = Qubit::create_entangled_state();
+    let (basis_id, matrix) = rand_choose(posible_basis.iter().enumerate().collect());
+    alice_qubit.apply_local_gate(matrix);
+    let alice_value = alice_qubit.measure();
+    (bob_qubit, alice_value, basis_id)
+}
+```
+
+Note `Qubit::create_entangled_state` is currently internal to the crate (used to build
+`build_bbm92`), not part of the public API — external code can build custom "prepare and
+send" protocols like B92 above, but not yet custom entanglement-based ones.
 
 
 ---
