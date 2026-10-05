@@ -9,13 +9,12 @@ pub mod participants;
 pub mod protocol;
 
 /// Module defining fundamental quantum types and structures.
-/// Includes the Qubit struct and related quantum state representations
-/// used throughout the QKD simulations.
+/// Includes `ComplexMatrix` and `QuantumState`, the joint-state representation that
+/// backs every qubit (entangled or not) used throughout the QKD simulations.
 mod types;
 
 /// Module providing the registry-backed `Qubit` handle used to represent qubits that
 /// may be part of a larger (possibly entangled) `QuantumState`.
-/// Not yet wired into `participants`/`protocol` — see the entanglement migration plan.
 mod registry;
 
 /// Module containing fundamental quantum constant matrices.
@@ -30,9 +29,10 @@ pub mod rng;
 use constants::{H, H_Y, I};
 pub use participants::{Receiver, Sender};
 pub use protocol::{PublicDiscussionResult, QExecutionResult, QKDResult, QKD};
+pub use registry::Qubit;
 pub use rng::set_global_seed;
 use rng::shuffle_and_split;
-pub use types::{ComplexMatrix, Qubit};
+pub use types::ComplexMatrix;
 
 /// Builds and configures a QKD instance for the BB84 protocol.
 ///
@@ -76,7 +76,7 @@ pub fn build_six_state() -> QKD {
 /// A `QKD` instance configured with Alice and Bob using the I and H bases,
 /// and a custom public basis discussion function for the B92 protocol.
 pub fn build_b92() -> QKD {
-    let prepare_b92 = Box::new(|| (Qubit::new(), false));
+    let prepare_b92 = Box::new(|| (Qubit::create_basis_state(false), false));
 
     let alice = Sender::builder()
         .posible_basis(vec![I, H])

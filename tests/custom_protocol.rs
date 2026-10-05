@@ -45,24 +45,19 @@ fn custom_six_state_replica_runs_like_the_built_in_one() {
 /// the 4 key bits).
 #[test]
 fn eve_knowledge_is_a_lower_bound_when_the_final_key_has_errors() {
-    let alice_prepare = Box::new(|| {
-        let mut qubit = Qubit::new();
-        qubit.apply_transformation(&qkd::constants::X); // |1⟩, matching the returned `true`
-        (qubit, true)
-    }) as Box<dyn Fn() -> (Qubit, bool)>;
+    let alice_prepare =
+        Box::new(|| (Qubit::create_basis_state(true), true)) as Box<dyn Fn() -> (Qubit, bool)>;
 
+    // Eve (default measure) always runs first and collapses the qubit to its true
+    // value; Bob's `qubit.measure()` below just re-reads that already-collapsed,
+    // deterministic value, which this closure then deliberately misreports on round 2.
     let bob_round = Cell::new(0usize);
-    let bob_measure = Box::new(move |qubit: &mut Qubit| {
+    let bob_measure = Box::new(move |qubit: &Qubit| {
         let round = bob_round.get();
         bob_round.set(round + 1);
-        let true_value = qubit.get_one_coef().norm() > 0.5;
-        let reported_value = if round == 2 { !true_value } else { true_value };
-        qubit.reset();
-        if reported_value {
-            qubit.apply_transformation(&qkd::constants::X);
-        }
-        reported_value
-    }) as Box<dyn Fn(&mut Qubit) -> bool>;
+        let true_value = qubit.measure();
+        if round == 2 { !true_value } else { true_value }
+    }) as Box<dyn Fn(&Qubit) -> bool>;
 
     let alice = Sender::builder()
         .posible_basis(vec![I])

@@ -44,17 +44,16 @@ impl QuantumRegistry {
 /// `QuantumState`'s doc comment for why that separation is what allows entanglement to
 /// be represented at all.
 #[derive(Copy, Clone)]
-#[allow(dead_code)] // wired into participants.rs/protocol.rs in a later phase
-pub(crate) struct Qubit {
+pub struct Qubit {
     state_id: usize,
     index: usize,
 }
 
-#[allow(dead_code)] // wired into participants.rs/protocol.rs in a later phase
+#[allow(dead_code)] // create_entangled_state is wired in once BBM92 is built (later phase)
 impl Qubit {
     /// Creates a fresh single-qubit computational basis state (|0⟩/|1⟩) in the
     /// registry and returns a handle to it.
-    pub(crate) fn create_basis_state(value: bool) -> Self {
+    pub fn create_basis_state(value: bool) -> Self {
         REGISTRY.with(|registry| registry.borrow_mut().push_basis_state_qubit(value))
     }
 
@@ -73,7 +72,7 @@ impl Qubit {
 
     /// Applies a single-qubit gate to this qubit, within whatever (possibly
     /// multi-qubit, possibly entangled) state it belongs to.
-    pub(crate) fn apply_local_gate(&self, gate: &ComplexMatrix) {
+    pub fn apply_local_gate(&self, gate: &ComplexMatrix) {
         REGISTRY.with(|registry| {
             registry.borrow_mut().states[self.state_id].apply_local_gate(self.index, gate)
         });
@@ -82,7 +81,7 @@ impl Qubit {
     /// Measures this qubit in the computational basis, collapsing (and
     /// renormalizing) the whole state it belongs to, and returns the measured
     /// classical bit.
-    pub(crate) fn measure(&self) -> bool {
+    pub fn measure(&self) -> bool {
         REGISTRY.with(|registry| registry.borrow_mut().states[self.state_id].measure(self.index))
     }
 }

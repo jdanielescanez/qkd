@@ -59,43 +59,6 @@ impl Div<f64> for ComplexMatrix {
     }
 }
 
-/// Represents a qubit with a quantum state as a linear combination of |0⟩ and |1⟩.
-pub struct Qubit {
-    state: (Complex64, Complex64),
-}
-
-impl Qubit {
-    /// Creates a new qubit in the |0⟩ state.
-    pub fn new() -> Self {
-        Qubit {
-            state: (Complex64::new(1.0, 0.0), Complex64::new(0.0, 0.0)),
-        }
-    }
-
-    /// Resets the qubit to the |0⟩ state.
-    pub fn reset(&mut self) {
-        *self = Qubit::new();
-    }
-
-    /// Applies a quantum transformation (unitary matrix) to the qubit.
-    pub fn apply_transformation(&mut self, matrix: &ComplexMatrix) {
-        self.state = (
-            self.state.0 * matrix.0[0][0] + self.state.1 * matrix.0[0][1],
-            self.state.0 * matrix.0[1][0] + self.state.1 * matrix.0[1][1],
-        );
-    }
-
-    /// Returns the coefficient for the |0⟩ state.
-    pub fn get_zero_coef(&self) -> Complex64 {
-        self.state.0
-    }
-
-    /// Returns the coefficient for the |1⟩ state.
-    pub fn get_one_coef(&self) -> Complex64 {
-        self.state.1
-    }
-}
-
 /// Represents the joint quantum state of `n` qubits as a vector of `2^n` complex
 /// amplitudes over the computational basis, where bit `i` of a basis index gives the
 /// state of qubit `i`.
@@ -103,15 +66,12 @@ impl Qubit {
 /// Unlike a tuple of independent single-qubit states, a generic vector in this space
 /// may be entangled: most vectors cannot be factored into a tensor product of
 /// per-qubit states, which is exactly what makes this representation able to describe
-/// entanglement (a single `Qubit` never could).
-// TODO: remove this `allow` once participants.rs/protocol.rs are migrated to use
-// `QuantumState` (planned migration, not yet wired in).
-#[allow(dead_code)]
+/// entanglement. Qubits never own their amplitudes directly — see `registry::Qubit`,
+/// which only ever holds a reference into a `QuantumState` owned by the registry.
 pub(crate) struct QuantumState {
     amplitudes: Vec<Complex64>,
 }
 
-#[allow(dead_code)]
 impl QuantumState {
     /// Creates a single-qubit computational basis state: |0⟩ for `value = false`,
     /// |1⟩ for `value = true`.
@@ -246,46 +206,21 @@ mod tests {
     }
 
     #[test]
-    fn new_qubit_starts_in_zero_state() {
-        let qubit = Qubit::new();
-        assert_complex_eq(qubit.get_zero_coef(), Complex64::new(1.0, 0.0));
-        assert_complex_eq(qubit.get_one_coef(), Complex64::new(0.0, 0.0));
+    fn apply_local_gate_hadamard_twice_is_identity() {
+        let mut state = QuantumState::create_basis_state(false);
+        state.apply_local_gate(0, &H);
+        state.apply_local_gate(0, &H);
+        assert_complex_eq(state.amplitudes[0], Complex64::new(1.0, 0.0));
+        assert_complex_eq(state.amplitudes[1], Complex64::new(0.0, 0.0));
     }
 
     #[test]
-    fn x_gate_flips_zero_to_one() {
-        let mut qubit = Qubit::new();
-        qubit.apply_transformation(&X);
-        assert_complex_eq(qubit.get_zero_coef(), Complex64::new(0.0, 0.0));
-        assert_complex_eq(qubit.get_one_coef(), Complex64::new(1.0, 0.0));
-    }
-
-    #[test]
-    fn reset_returns_to_zero_state_after_transformations() {
-        let mut qubit = Qubit::new();
-        qubit.apply_transformation(&X);
-        qubit.apply_transformation(&H);
-        qubit.reset();
-        assert_complex_eq(qubit.get_zero_coef(), Complex64::new(1.0, 0.0));
-        assert_complex_eq(qubit.get_one_coef(), Complex64::new(0.0, 0.0));
-    }
-
-    #[test]
-    fn hadamard_applied_twice_is_identity() {
-        let mut qubit = Qubit::new();
-        qubit.apply_transformation(&H);
-        qubit.apply_transformation(&H);
-        assert_complex_eq(qubit.get_zero_coef(), Complex64::new(1.0, 0.0));
-        assert_complex_eq(qubit.get_one_coef(), Complex64::new(0.0, 0.0));
-    }
-
-    #[test]
-    fn transformations_preserve_normalization() {
-        let mut qubit = Qubit::new();
-        qubit.apply_transformation(&H);
-        qubit.apply_transformation(&X);
-        qubit.apply_transformation(&H);
-        let norm_sq = qubit.get_zero_coef().norm_sqr() + qubit.get_one_coef().norm_sqr();
+    fn apply_local_gate_preserves_normalization() {
+        let mut state = QuantumState::create_basis_state(false);
+        state.apply_local_gate(0, &H);
+        state.apply_local_gate(0, &X);
+        state.apply_local_gate(0, &H);
+        let norm_sq: f64 = state.amplitudes.iter().map(|a| a.norm_sqr()).sum();
         assert!((norm_sq - 1.0).abs() < EPS);
     }
 

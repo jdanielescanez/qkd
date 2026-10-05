@@ -1,4 +1,5 @@
 use crate::constants::{H, I, X};
+use crate::registry::Qubit;
 use crate::rng::{rand_float, shuffle_and_split};
 use crate::participants::{Receiver, Sender};
 use bon::Builder;
@@ -278,30 +279,32 @@ impl QKD {
     ///
     /// A `QExecutionResult` containing the values and bases chosen by Alice, Bob, and Eve.
     fn quantum_communication(&self, interception_rate: f64, noise: f64) -> QExecutionResult {
+        // Clears every QuantumState created on the previous round, so the registry
+        // never grows past what a single round needs regardless of how many rounds
+        // `run` executes overall.
+        Qubit::reset_registry();
+
         // Alice
-        let (mut qubit, alice_value) = (self.alice.prepare)();
-        let alice_basis = (self.alice.change_basis)(&mut qubit, &self.alice.posible_basis);
+        let (qubit, alice_value) = (self.alice.prepare)();
+        let alice_basis = (self.alice.change_basis)(&qubit, &self.alice.posible_basis);
 
         // Eve
         let mut eve_basis = None;
         let mut eve_value = None;
         if rand_float() < interception_rate {
-            eve_basis = Some((self.eve.change_basis)(&mut qubit, &self.eve.posible_basis));
-            eve_value = Some((self.eve.measure)(&mut qubit));
-            (self.eve.try_to_restore_qubit)(
-                &mut qubit,
-                &self.eve.posible_basis[eve_basis.unwrap()],
-            );
+            eve_basis = Some((self.eve.change_basis)(&qubit, &self.eve.posible_basis));
+            eve_value = Some((self.eve.measure)(&qubit));
+            (self.eve.try_to_restore_qubit)(&qubit, &self.eve.posible_basis[eve_basis.unwrap()]);
         }
 
         // Perform bit-flip
         if rand_float() < noise {
-            qubit.apply_transformation(&X);
+            qubit.apply_local_gate(&X);
         }
 
         // Bob
-        let bob_basis = (self.bob.change_basis)(&mut qubit, &self.bob.posible_basis);
-        let bob_value = (self.bob.measure)(&mut qubit);
+        let bob_basis = (self.bob.change_basis)(&qubit, &self.bob.posible_basis);
+        let bob_value = (self.bob.measure)(&qubit);
 
         QExecutionResult::new(
             alice_value,
