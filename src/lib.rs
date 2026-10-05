@@ -13,6 +13,11 @@ pub mod protocol;
 /// used throughout the QKD simulations.
 mod types;
 
+/// Module providing the registry-backed `Qubit` handle used to represent qubits that
+/// may be part of a larger (possibly entangled) `QuantumState`.
+/// Not yet wired into `participants`/`protocol` — see the entanglement migration plan.
+mod registry;
+
 /// Module containing fundamental quantum constant matrices.
 /// Provides predefined quantum gates and operations used in QKD protocols,
 /// including identity (I), Hadamard (H), Pauli-X (X), and Y-basis Hadamard (H_Y) matrices.
