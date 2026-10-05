@@ -16,14 +16,15 @@
   </p>
 </div>
 
-A Rust library for simulating **Quantum Key Distribution (QKD)** protocols, including **BB84**, **Six-State**, **B92**, the entanglement-based **BBM92**, and **your own protocols**. This crate provides a flexible and efficient way to simulate quantum key exchange, analyze security metrics, and evaluate the impact of eavesdropping.
+A Rust library for simulating **Quantum Key Distribution (QKD)** protocols, including **BB84**, **Six-State**, **B92**, the entanglement-based **BBM92** and **E91** (secured by a Bell/CHSH inequality test rather than an error-rate threshold), and **your own protocols**. This crate provides a flexible and efficient way to simulate quantum key exchange, analyze security metrics, and evaluate the impact of eavesdropping.
 
 ---
 
 ## Features
 
-- **Multiple QKD Protocols**: Simulate BB84, Six-State, B92, BBM92 (entanglement-based) and your own protocols.
+- **Multiple QKD Protocols**: Simulate BB84, Six-State, B92, BBM92 and E91 (both entanglement-based), and your own protocols.
 - **Entanglement support**: A joint multi-qubit `QuantumState` representation backs every qubit, so entanglement-based protocols are first-class, not bolted on.
+- **Pluggable security proofs**: The security check itself is injectable, not just the measurement bases — E91's CHSH test lives side by side with the QBER threshold used by every other protocol.
 - **Customizable Parameters**: Adjust the number of qubits, interception rate, noise and confidence.
 - **Security Metrics**: Calculate Quantum Bit Error Rate (QBER), key length, and Eve's knowledge.
 - **Library**: Integrate into your Rust projects.
@@ -43,10 +44,10 @@ cargo add qkd
 Defines the `Sender` and `Receiver` structs, representing Alice, Bob, and Eve in the QKD protocol. Uses a builder pattern for flexible configuration of quantum bases and participant behaviors. `Sender::prepare` obtains the qubit that continues towards Bob along with Alice's classical value and the basis she used — whether by preparing it directly (BB84-style) or by measuring her own half of an entangled pair (BBM92-style); see [Build your own protocols](#build-your-own-protocols).
 
 ### `protocol`
-Implements the core Quantum Key Distribution protocols. Contains the main `QKD` struct, protocol execution logic, and result types including `QKDResult` and `PublicDiscussionResult`.
+Implements the core Quantum Key Distribution protocols. Contains the main `QKD` struct, protocol execution logic, and result types including `QKDResult` and `PublicDiscussionResult`. `QKD::check_security` is injectable just like `public_basis_discussion`: the default is a QBER-vs-`noise` threshold, but a protocol whose security proof isn't based on an error rate — like E91's CHSH test — can supply its own instead; see [Build your own protocols](#build-your-own-protocols).
 
 ### `constants`
-Contains fundamental quantum constant matrices. Provides predefined quantum gates (`I`, `H`, `X`, `H_Y`) used in QKD protocols for state transformations and measurements.
+Contains fundamental quantum constant matrices (`I`, `H`, `X`, `H_Y`) and `rotation(theta)`, a parameterized measurement-basis change used by E91's arbitrary-angle bases.
 
 ### `rng`
 Provides the global seedable random number generator used throughout the simulations. Call `set_global_seed` for reproducible results.
@@ -60,7 +61,7 @@ Every qubit is backed by a joint `QuantumState` (a vector of `2^n` complex ampli
 ### Execution
 
 ```rust
-use qkd::{build_bb84, build_six_state, build_b92, build_bbm92};
+use qkd::{build_bb84, build_six_state, build_b92, build_bbm92, build_e91};
 
 const NUMBER_OF_QUBITS: usize = 1000;
 const INTERCEPTION_RATE: f64 = 0.01;
@@ -82,6 +83,14 @@ fn main() {
     // identically from the outside (same bases, same statistics, same metrics).
     let result = build_bbm92().run(NUMBER_OF_QUBITS, INTERCEPTION_RATE, NOISE, CONFIDENCE);
     println!("BBM92 Result: {:?}", result);
+
+    // E91: secured by violating a Bell (CHSH) inequality instead of an error-rate
+    // threshold. `measured_qber` holds the CHSH parameter |S| for this protocol, not
+    // a bit error rate — see "Understanding E91" below. A larger qubit count helps
+    // here, since each of the 4 CHSH basis-pair combinations only occurs on ~1/9 of
+    // the rounds.
+    let result = build_e91().run(100_000, INTERCEPTION_RATE, NOISE, CONFIDENCE);
+    println!("E91 Result: {:?}", result);
 }
 ```
 
@@ -118,6 +127,27 @@ is aborted, it is left at its default `0.0` instead of becoming unavailable like
 and `final_key_qber` do — so a `0.0` value does not by itself mean "Eve learned nothing", it
 may just mean the run was aborted before this metric was computed. Always check
 `is_considered_secure` before interpreting `eve_knowledge`.
+
+### Understanding E91
+
+E91 (Ekert 1991) is secured differently from every other protocol here: instead of checking
+that the publicly disclosed error rate stays below a threshold, it checks that a **Bell/CHSH
+inequality** is violated — a property no classical (local hidden-variable) process can achieve,
+but quantum entanglement can.
+
+Each round, Alice and Bob independently pick one of 3 measurement angles. Two angle
+combinations line up exactly (giving perfectly correlated outcomes, used for the key); four
+more combinations are combined into the CHSH parameter
+`S = E(a0,b1) - E(a0,b2) + E(a1,b1) + E(a1,b2)`, where each `E(ai,bj)` is the measured
+correlation for that angle pair. Classically, `|S| ≤ 2`; quantum mechanics allows up to
+`2 * sqrt(2) ≈ 2.828` (the Tsirelson bound) for the entangled pairs this crate produces.
+`is_considered_secure` checks whether the *lower* confidence bound of `|S|` still exceeds `2.0`.
+
+Because `QKDResult` is shared across every protocol, `measured_qber` holds `|S|` for E91, not a
+bit error rate — a value around `2.0` to `2.828` is expected without eavesdropping, and a value
+dropping towards (or below) `2.0` indicates interference. Each of the 4 CHSH angle pairs only
+occurs on about 1/9 of the rounds, so E91 needs a larger `number_of_qubits` than the other
+protocols for a statistically stable `|S|` estimate (tens of thousands, not hundreds).
 
 ### Build your own protocols
 
@@ -227,8 +257,24 @@ fn prepare_bbm92(posible_basis: &Vec<ComplexMatrix>) -> (Qubit, bool, usize) {
 ```
 
 Note `Qubit::create_entangled_state` is currently internal to the crate (used to build
-`build_bbm92`), not part of the public API — external code can build custom "prepare and
-send" protocols like B92 above, but not yet custom entanglement-based ones.
+`build_bbm92`/`build_e91`), not part of the public API — external code can build custom
+"prepare and send" protocols like B92 above, but not yet custom entanglement-based ones.
+
+For a protocol whose security proof isn't a QBER threshold — like E91's — `QKD::check_security`
+is injectable the same way `public_basis_discussion` is. It receives the full
+`PublicDiscussionResult` (not just the publicly disclosed values), because a check like CHSH
+needs to know which basis pair produced each round, not just a flat list of disclosed bits:
+
+```rust
+QKD::builder()
+    .name("E91".to_string())
+    .alice(alice)
+    .bob(bob)
+    .eve(eve)
+    .public_basis_discussion(Box::new(public_basis_discussion_e91))
+    .check_security(Box::new(check_security_e91))
+    .build()
+```
 
 
 ---

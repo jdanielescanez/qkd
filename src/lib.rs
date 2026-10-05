@@ -393,6 +393,70 @@ mod tests {
         assert_eq!(s, 0.0);
     }
 
+    fn make_pair_results(
+        alice_basis: usize,
+        bob_basis: usize,
+        agree: usize,
+        disagree: usize,
+    ) -> Vec<QExecutionResult> {
+        let mut results: Vec<QExecutionResult> =
+            (0..agree).map(|_| make_result(true, alice_basis, true, bob_basis)).collect();
+        results.extend((0..disagree).map(|_| make_result(true, alice_basis, false, bob_basis)));
+        results
+    }
+
+    #[test]
+    fn check_security_e91_subtracts_the_statistical_margin_from_s() {
+        // Every pair has the same, deliberately small sample (n=8) so each
+        // individual variance is large (0.0547): `s.abs()` alone (3.0) clears the
+        // classical bound of 2.0 comfortably, but once the statistical margin
+        // (z * sqrt(variance_sum)) is subtracted, the *lower* confidence bound on
+        // |S| dips to ~1.8, below 2.0 -- this is only detectable if `variance_sum`
+        // is actually accumulated (not short-circuited to 0) and actually
+        // subtracted with the right sign inside the right formula for `z`.
+        let mut results = Vec::new();
+        results.extend(make_pair_results(0, 1, 7, 1)); // E = 0.75
+        results.extend(make_pair_results(0, 2, 1, 7)); // E = -0.75 -> term = +0.75
+        results.extend(make_pair_results(1, 1, 7, 1)); // E = 0.75
+        results.extend(make_pair_results(1, 2, 7, 1)); // E = 0.75
+
+        let discussion = PublicDiscussionResult {
+            alice_public_values: vec![],
+            bob_public_values: vec![],
+            indexes_to_key: vec![],
+            results,
+        };
+        let (secure, s) = check_security_e91(&discussion, 0.0, 0.99);
+        assert!((s - 3.0).abs() < 1e-9);
+        assert!(
+            !secure,
+            "expected insecure once the statistical margin is subtracted from |S|=3.0"
+        );
+    }
+
+    #[test]
+    fn check_security_e91_boundary_at_exactly_the_classical_limit() {
+        // Every correlation is exactly +-1 (zero variance each), chosen so the
+        // combined |S| lands on exactly 2.0 -- the classical limit itself must not
+        // be considered a violation (`>`, not `>=`).
+        let mut results = Vec::new();
+        results.extend(make_pair_results(0, 1, 10, 0)); // E = 1
+        results.extend(make_pair_results(0, 2, 0, 10)); // E = -1 -> term = +1
+        results.extend(make_pair_results(1, 1, 0, 10)); // E = -1
+        results.extend(make_pair_results(1, 2, 10, 0)); // E = 1
+        // S = E(0,1) - E(0,2) + E(1,1) + E(1,2) = 1 - (-1) + (-1) + 1 = 2.0
+
+        let discussion = PublicDiscussionResult {
+            alice_public_values: vec![],
+            bob_public_values: vec![],
+            indexes_to_key: vec![],
+            results,
+        };
+        let (secure, s) = check_security_e91(&discussion, 0.0, 0.99);
+        assert!((s - 2.0).abs() < 1e-9);
+        assert!(!secure, "exactly the classical limit must not count as a violation");
+    }
+
     #[test]
     fn public_basis_discussion_e91_selects_exactly_the_key_pairs() {
         let results = vec![
