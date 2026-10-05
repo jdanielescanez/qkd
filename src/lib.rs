@@ -26,12 +26,14 @@ pub mod constants;
 /// Call `set_global_seed` for reproducible simulations.
 pub mod rng;
 
-use constants::{H, H_Y, I};
+use constants::{rotation, H, H_Y, I};
 pub use participants::{Receiver, Sender};
 pub use protocol::{PublicDiscussionResult, QExecutionResult, QKDResult, QKD};
 pub use registry::Qubit;
 pub use rng::set_global_seed;
 use rng::{rand_choose, shuffle_and_split};
+use statrs::distribution::{ContinuousCDF, Normal};
+use std::f64::consts::PI;
 pub use types::ComplexMatrix;
 
 /// Builds and configures a QKD instance for the BB84 protocol.
@@ -130,6 +132,140 @@ fn prepare_bbm92(posible_basis: &Vec<ComplexMatrix>) -> (Qubit, bool, usize) {
     (bob_qubit, alice_value, basis_id)
 }
 
+/// Alice's measurement angles for E91 (indices 0, 1, 2): 0°, 45°, 22.5°.
+const E91_ALICE_ANGLES: [f64; 3] = [0.0, PI / 4.0, PI / 8.0];
+/// Bob's measurement angles for E91 (indices 0, 1, 2): 0°, 22.5°, 67.5°.
+const E91_BOB_ANGLES: [f64; 3] = [0.0, PI / 8.0, 3.0 * PI / 8.0];
+
+/// `(alice_basis, bob_basis)` index pairs where Alice's and Bob's angles coincide
+/// exactly (0° == 0°, and 22.5° == 22.5°), giving perfect correlation — these are the
+/// pairs used for key generation.
+const E91_KEY_PAIRS: [(usize, usize); 2] = [(0, 0), (2, 1)];
+
+/// `(alice_basis, bob_basis)` index pairs used for the CHSH test, chosen so that the
+/// angle differences are exactly the combination that maximizes the CHSH violation
+/// for the Bell state this crate produces (see `check_security_e91`'s doc comment for
+/// the derivation): `S = E(0,1) - E(0,2) + E(1,1) + E(1,2)`.
+const E91_CHSH_PAIRS: [(usize, usize); 4] = [(0, 1), (0, 2), (1, 1), (1, 2)];
+
+/// Builds and configures a QKD instance for the E91 protocol (Ekert 1991): an
+/// entanglement-based protocol whose security proof is the violation of the CHSH
+/// (Bell) inequality, rather than a simple error-rate threshold.
+///
+/// Alice and Bob each randomly choose one of 3 measurement angles per round
+/// (`E91_ALICE_ANGLES`/`E91_BOB_ANGLES`, applied via [`constants::rotation`]). Two
+/// angle-index combinations coincide exactly and are used for key generation
+/// (`E91_KEY_PAIRS`); four more are used for the CHSH test (`E91_CHSH_PAIRS`); the
+/// remaining combinations are discarded. See `check_security_e91` for how the CHSH
+/// parameter `S` is computed and turned into a security decision.
+///
+/// Note `QKDResult::measured_qber` holds `|S|` for this protocol, not a bit error
+/// rate — the field is shared across all protocols built on top of `QKD`, and E91's
+/// natural statistic is `S`, not a QBER.
+///
+/// # Returns
+/// A `QKD` instance configured with Alice and Bob using the E91 measurement angles.
+pub fn build_e91() -> QKD {
+    let alice = Sender::builder()
+        .posible_basis(E91_ALICE_ANGLES.iter().map(|&theta| rotation(theta)).collect())
+        .prepare(Box::new(prepare_bbm92))
+        .build();
+    let bob = Receiver::builder()
+        .posible_basis(E91_BOB_ANGLES.iter().map(|&theta| rotation(theta)).collect())
+        .build();
+    let eve = Receiver::builder()
+        .posible_basis(E91_BOB_ANGLES.iter().map(|&theta| rotation(theta)).collect())
+        .build();
+
+    QKD::builder()
+        .name("E91".to_string())
+        .alice(alice)
+        .bob(bob)
+        .eve(eve)
+        .public_basis_discussion(Box::new(public_basis_discussion_e91))
+        .check_security(Box::new(check_security_e91))
+        .build()
+}
+
+/// E91's public discussion: classifies every round by its `(alice_basis, bob_basis)`
+/// index pair into key-generating (`E91_KEY_PAIRS`) or discarded. Unlike the default
+/// discussion, the publicly disclosed values (`alice_public_values`/`bob_public_values`)
+/// are left empty — `check_security_e91` recomputes everything it needs directly from
+/// `results`, since the CHSH test needs each round's basis pair, not just a flat list
+/// of disclosed bits.
+fn public_basis_discussion_e91(results: &Vec<QExecutionResult>) -> PublicDiscussionResult {
+    let indexes_to_key = results
+        .iter()
+        .enumerate()
+        .filter(|(_, result)| E91_KEY_PAIRS.contains(&(result.alice_basis, result.bob_basis)))
+        .map(|(i, _)| i)
+        .collect();
+
+    PublicDiscussionResult {
+        alice_public_values: vec![],
+        bob_public_values: vec![],
+        indexes_to_key,
+        results: results.clone(),
+    }
+}
+
+/// Estimates the correlation `E(alice_basis, bob_basis) = P(agree) - P(disagree)` for
+/// every round using that exact basis pair, along with its variance (`Var(E) =
+/// (1 - E^2) / n`, since each round contributes an independent +-1-valued sample).
+/// Returns `None` if no round used that basis pair.
+fn chsh_correlation(results: &[QExecutionResult], pair: (usize, usize)) -> Option<(f64, f64)> {
+    let agreements: Vec<bool> = results
+        .iter()
+        .filter(|result| (result.alice_basis, result.bob_basis) == pair)
+        .map(|result| result.alice_value == result.bob_value)
+        .collect();
+
+    let n = agreements.len() as f64;
+    if n == 0.0 {
+        return None;
+    }
+    let agree_count = agreements.into_iter().filter(|&agree| agree).count() as f64;
+    let correlation = (2.0 * agree_count - n) / n; // P(agree) - P(disagree)
+    let variance = (1.0 - correlation * correlation) / n;
+    Some((correlation, variance))
+}
+
+/// E91's security check: computes the CHSH parameter
+/// `S = E(0,1) - E(0,2) + E(1,1) + E(1,2)` (see `E91_CHSH_PAIRS`) from the rounds
+/// `public_basis_discussion_e91` left out of the key, and checks whether its lower
+/// confidence bound still exceeds the classical limit of `2.0` — a one-sided test in
+/// the same spirit as `protocol::default_check_security`'s QBER threshold, just for a
+/// different statistic. `noise` is not used: unlike the QBER test, this one does not
+/// assume a particular noise model, only that a classical (local hidden variable)
+/// process cannot produce `|S| > 2.0`.
+///
+/// Without any noise or eavesdropping, `S` should be close to `2 * sqrt(2) ≈ 2.828`
+/// (the Tsirelson bound, the maximum `|S|` quantum mechanics allows) — see
+/// `tests/protocols.rs` for the end-to-end check of this.
+fn check_security_e91(
+    discussion: &PublicDiscussionResult,
+    _noise: f64,
+    confidence: f64,
+) -> (bool, f64) {
+    let mut s = 0.0;
+    let mut variance_sum = 0.0;
+    for (i, &pair) in E91_CHSH_PAIRS.iter().enumerate() {
+        match chsh_correlation(&discussion.results, pair) {
+            Some((correlation, variance)) => {
+                s += if i == 1 { -correlation } else { correlation };
+                variance_sum += variance;
+            }
+            None => return (false, 0.0),
+        }
+    }
+
+    let normal = Normal::standard();
+    let z = normal.inverse_cdf((1.0 + confidence) / 2.0);
+    let lower_bound = s.abs() - z * variance_sum.sqrt();
+
+    (lower_bound > 2.0, s.abs())
+}
+
 fn public_basis_discussion_b92(results: &Vec<QExecutionResult>) -> PublicDiscussionResult {
     let mut results = results.clone();
     let bob_values: Vec<bool> = results.iter().map(|x| x.bob_value).collect();
@@ -190,5 +326,82 @@ mod tests {
             let (_, _, basis_id) = prepare_bbm92(&bases);
             assert!(basis_id < bases.len());
         }
+    }
+
+    fn make_result(
+        alice_value: bool,
+        alice_basis: usize,
+        bob_value: bool,
+        bob_basis: usize,
+    ) -> QExecutionResult {
+        QExecutionResult::new(alice_value, alice_basis, bob_value, bob_basis, None, None)
+    }
+
+    #[test]
+    fn chsh_correlation_computes_expected_value_and_variance() {
+        let results = vec![
+            make_result(true, 0, true, 1),  // agree
+            make_result(true, 0, true, 1),  // agree
+            make_result(true, 0, false, 1), // disagree
+        ];
+        let (correlation, variance) = chsh_correlation(&results, (0, 1)).unwrap();
+        assert!((correlation - (1.0 / 3.0)).abs() < 1e-9); // 2 agree, 1 disagree -> (2*2-3)/3
+        let expected_variance = (1.0 - (1.0 / 3.0_f64).powi(2)) / 3.0;
+        assert!((variance - expected_variance).abs() < 1e-9);
+    }
+
+    #[test]
+    fn chsh_correlation_returns_none_when_basis_pair_unused() {
+        let results = vec![make_result(true, 0, true, 0)];
+        assert!(chsh_correlation(&results, (1, 2)).is_none());
+    }
+
+    #[test]
+    fn check_security_e91_detects_violation_from_crafted_results() {
+        // Synthetic (not necessarily physically realizable) correlations chosen so
+        // the arithmetic can be checked by hand: S = E(0,1) - E(0,2) + E(1,1) + E(1,2)
+        // = 1 - (-1) + 1 + 1 = 4, with zero variance (every correlation is exactly
+        // +-1), so the test is fully deterministic.
+        let mut results = Vec::new();
+        results.extend((0..50).map(|_| make_result(true, 0, true, 1))); // (0,1): E=1
+        results.extend((0..50).map(|_| make_result(true, 0, false, 2))); // (0,2): E=-1
+        results.extend((0..50).map(|_| make_result(true, 1, true, 1))); // (1,1): E=1
+        results.extend((0..50).map(|_| make_result(true, 1, true, 2))); // (1,2): E=1
+
+        let discussion = PublicDiscussionResult {
+            alice_public_values: vec![],
+            bob_public_values: vec![],
+            indexes_to_key: vec![],
+            results,
+        };
+        let (secure, s) = check_security_e91(&discussion, 0.0, 0.99);
+        assert!(secure);
+        assert!((s - 4.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn check_security_e91_is_insecure_when_a_chsh_pair_was_never_used() {
+        // Only (0,1) ever occurs; (0,2), (1,1) and (1,2) have zero samples.
+        let discussion = PublicDiscussionResult {
+            alice_public_values: vec![],
+            bob_public_values: vec![],
+            indexes_to_key: vec![],
+            results: vec![make_result(true, 0, true, 1)],
+        };
+        let (secure, s) = check_security_e91(&discussion, 0.0, 0.99);
+        assert!(!secure);
+        assert_eq!(s, 0.0);
+    }
+
+    #[test]
+    fn public_basis_discussion_e91_selects_exactly_the_key_pairs() {
+        let results = vec![
+            make_result(true, 0, true, 0), // key pair (0,0)
+            make_result(true, 2, true, 1), // key pair (2,1)
+            make_result(true, 0, true, 1), // CHSH pair (0,1), not key
+            make_result(true, 1, true, 0), // neither key nor CHSH, discarded
+        ];
+        let discussion = public_basis_discussion_e91(&results);
+        assert_eq!(discussion.indexes_to_key, vec![0, 1]);
     }
 }

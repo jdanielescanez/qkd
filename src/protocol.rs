@@ -143,6 +143,18 @@ pub struct QKD {
     /// Determines which bits are used for key generation and which for security checking.
     #[builder(default = Box::new(default_public_basis_discussion))]
     public_basis_discussion: Box<dyn Fn(&Vec<QExecutionResult>) -> PublicDiscussionResult>,
+    /// Function that decides, from the public discussion's disclosed values (and
+    /// `results`, for protocols that need more than just the disclosed bits — e.g. a
+    /// CHSH-based check that needs to know which basis pair produced each value),
+    /// whether the run is secure, and the measured error/statistic to report.
+    ///
+    /// By default (`default_check_security`), this is the QBER-vs-`noise` threshold
+    /// test documented on [`QKD::run`]. A protocol whose security proof is not based on
+    /// a simple error threshold (e.g. a Bell/CHSH inequality test) can override this
+    /// instead of trying to repurpose the QBER test for something it wasn't designed
+    /// to measure.
+    #[builder(default = Box::new(default_check_security))]
+    check_security: Box<dyn Fn(&PublicDiscussionResult, f64, f64) -> (bool, f64)>,
 }
 
 impl QKD {
@@ -206,14 +218,9 @@ impl QKD {
             .collect::<Vec<QExecutionResult>>();
 
         let discussion_result = (self.public_basis_discussion)(&results);
+        let (is_considered_secure, measured_qber) =
+            (self.check_security)(&discussion_result, noise, confidence);
         let results = discussion_result.results;
-
-        let (is_considered_secure, measured_qber) = self.check_public_values(
-            discussion_result.alice_public_values,
-            discussion_result.bob_public_values,
-            noise,
-            confidence,
-        );
 
         let mut eve_knowledge = 0.0;
         let mut final_key_qber = None;
@@ -315,62 +322,61 @@ impl QKD {
         )
     }
 
-    /// Checks if the public values announced by Alice and Bob are consistent with the
-    /// expected channel `noise`, at the given statistical `confidence` level.
-    ///
-    /// This performs a one-sided hypothesis test: under the null hypothesis that the true
-    /// per-bit error probability equals `noise`, the accepted upper bound on the observed
-    /// QBER is `noise + z * sqrt(noise * (1 - noise) / sample_size)`, where `z` is the
-    /// `confidence`-quantile of the standard normal distribution. The measured QBER is
-    /// compared against that bound.
-    ///
-    /// Note the term `sqrt(noise * (1 - noise))` is exactly `0.0` when `noise` is `0.0` or
-    /// `1.0`: at those boundary values the hypothesis has no variance, so the threshold
-    /// collapses to `noise` itself and `confidence` has no effect (see [`QKD::run`]).
-    ///
-    /// # Arguments
-    ///
-    /// * `alice_public_values` - Public values announced by Alice.
-    /// * `bob_public_values` - Public values announced by Bob.
-    /// * `noise` - Expected per-bit error probability under the "no eavesdropping" hypothesis.
-    /// * `confidence` - Statistical confidence level for the test.
-    ///
-    /// # Returns
-    ///
-    /// A tuple `(is_considered_secure, measured_qber)`. If there are no publicly disclosed
-    /// values to compare (`sample_size == 0`), the protocol cannot be statistically validated
-    /// and this returns `(false, 0.0)`.
-    fn check_public_values(
-        &self,
-        alice_public_values: Vec<bool>,
-        bob_public_values: Vec<bool>,
-        noise: f64,
-        confidence: f64,
-    ) -> (bool, f64) {
-        let sample_size = alice_public_values.len() as f64;
-        // No publicly disclosed values means there is nothing to statistically
-        // validate, so the protocol cannot be considered secure. Without this
-        // guard, `sample_size == 0.0` would produce NaN/inf below.
-        if sample_size == 0.0 {
-            return (false, 0.0);
-        }
+}
 
-        let normal = Normal::standard();
-
-        let p = (1.0 + confidence) / 2.0;
-        let z = normal.inverse_cdf(p);
-
-        let threshold = noise + z / sample_size.sqrt() * (noise * (1.0 - noise)).sqrt();
-
-        let measured_qber = alice_public_values
-            .into_iter()
-            .zip(bob_public_values)
-            .filter(|(a, b)| a != b)
-            .count() as f64
-            / sample_size;
-
-        (measured_qber <= threshold, measured_qber)
+/// Default security check: verifies the publicly disclosed values are consistent with
+/// the expected channel `noise`, at the given statistical `confidence` level.
+///
+/// This performs a one-sided hypothesis test: under the null hypothesis that the true
+/// per-bit error probability equals `noise`, the accepted upper bound on the observed
+/// QBER is `noise + z * sqrt(noise * (1 - noise) / sample_size)`, where `z` is the
+/// `confidence`-quantile of the standard normal distribution. The measured QBER is
+/// compared against that bound.
+///
+/// Note the term `sqrt(noise * (1 - noise))` is exactly `0.0` when `noise` is `0.0` or
+/// `1.0`: at those boundary values the hypothesis has no variance, so the threshold
+/// collapses to `noise` itself and `confidence` has no effect (see [`QKD::run`]).
+///
+/// # Arguments
+///
+/// * `discussion` - The public discussion result; only the disclosed values are used.
+/// * `noise` - Expected per-bit error probability under the "no eavesdropping" hypothesis.
+/// * `confidence` - Statistical confidence level for the test.
+///
+/// # Returns
+///
+/// A tuple `(is_considered_secure, measured_qber)`. If there are no publicly disclosed
+/// values to compare (`sample_size == 0`), the protocol cannot be statistically validated
+/// and this returns `(false, 0.0)`.
+fn default_check_security(
+    discussion: &PublicDiscussionResult,
+    noise: f64,
+    confidence: f64,
+) -> (bool, f64) {
+    let sample_size = discussion.alice_public_values.len() as f64;
+    // No publicly disclosed values means there is nothing to statistically
+    // validate, so the protocol cannot be considered secure. Without this
+    // guard, `sample_size == 0.0` would produce NaN/inf below.
+    if sample_size == 0.0 {
+        return (false, 0.0);
     }
+
+    let normal = Normal::standard();
+
+    let p = (1.0 + confidence) / 2.0;
+    let z = normal.inverse_cdf(p);
+
+    let threshold = noise + z / sample_size.sqrt() * (noise * (1.0 - noise)).sqrt();
+
+    let measured_qber = discussion
+        .alice_public_values
+        .iter()
+        .zip(discussion.bob_public_values.iter())
+        .filter(|(a, b)| a != b)
+        .count() as f64
+        / sample_size;
+
+    (measured_qber <= threshold, measured_qber)
 }
 
 /// Default public basis discussion function.
@@ -428,55 +434,64 @@ mod tests {
             .build()
     }
 
+    fn discussion(alice_public_values: Vec<bool>, bob_public_values: Vec<bool>) -> PublicDiscussionResult {
+        PublicDiscussionResult {
+            alice_public_values,
+            bob_public_values,
+            indexes_to_key: vec![],
+            results: vec![],
+        }
+    }
+
     #[test]
-    fn check_public_values_empty_sample_is_insecure_with_zero_qber() {
-        let qkd = minimal_qkd();
-        let (secure, qber) = qkd.check_public_values(vec![], vec![], 0.0, 0.99);
+    fn check_security_empty_sample_is_insecure_with_zero_qber() {
+        let (secure, qber) = default_check_security(&discussion(vec![], vec![]), 0.0, 0.99);
         assert!(!secure);
         assert_eq!(qber, 0.0);
         assert!(!qber.is_nan());
     }
 
     #[test]
-    fn check_public_values_no_mismatches_is_secure() {
-        let qkd = minimal_qkd();
+    fn check_security_no_mismatches_is_secure() {
         let values = vec![true, false, true, false, true];
-        let (secure, qber) = qkd.check_public_values(values.clone(), values, 0.0, 0.99);
+        let (secure, qber) = default_check_security(&discussion(values.clone(), values), 0.0, 0.99);
         assert!(secure);
         assert_eq!(qber, 0.0);
     }
 
     #[test]
-    fn check_public_values_any_mismatch_is_insecure_when_noise_is_zero() {
-        let qkd = minimal_qkd();
+    fn check_security_any_mismatch_is_insecure_when_noise_is_zero() {
         let alice_values = vec![true; 1000];
         let mut bob_values = alice_values.clone();
         bob_values[0] = false; // a single mismatch out of 1000
-        let (secure, qber) = qkd.check_public_values(alice_values, bob_values, 0.0, 0.5);
+        let (secure, qber) =
+            default_check_security(&discussion(alice_values, bob_values), 0.0, 0.5);
         assert!(!secure);
         assert!((qber - 0.001).abs() < 1e-9);
     }
 
     #[test]
-    fn check_public_values_confidence_has_no_effect_when_noise_is_zero() {
-        let qkd = minimal_qkd();
+    fn check_security_confidence_has_no_effect_when_noise_is_zero() {
         let alice_values = vec![true; 100];
         let bob_values = alice_values.clone();
-        let (secure_low, _) =
-            qkd.check_public_values(alice_values.clone(), bob_values.clone(), 0.0, 0.5);
-        let (secure_high, _) = qkd.check_public_values(alice_values, bob_values, 0.0, 0.9999999999);
+        let (secure_low, _) = default_check_security(
+            &discussion(alice_values.clone(), bob_values.clone()),
+            0.0,
+            0.5,
+        );
+        let (secure_high, _) =
+            default_check_security(&discussion(alice_values, bob_values), 0.0, 0.9999999999);
         assert_eq!(secure_low, secure_high);
     }
 
     #[test]
-    fn check_public_values_zero_confidence_gives_zero_tolerance_above_noise() {
+    fn check_security_zero_confidence_gives_zero_tolerance_above_noise() {
         // confidence = 0.0 -> z = inverse_cdf(0.5) = 0.0, so the threshold collapses to
         // exactly `noise`, with no statistical margin at all -- mirroring the
         // noise = 0.0 edge case, but for a different reason (z = 0 instead of zero
         // variance). A 6% observed error rate against a 5% declared noise is a
         // plausible sampling fluctuation that a normal confidence level accepts, but
         // confidence = 0.0 rejects outright.
-        let qkd = minimal_qkd();
         let n = 1000;
         let mismatches = 60; // 6% observed vs 5% declared noise
         let alice_values = vec![true; n];
@@ -484,17 +499,19 @@ mod tests {
         for value in bob_values.iter_mut().take(mismatches) {
             *value = false;
         }
-        let (secure_zero_confidence, _) =
-            qkd.check_public_values(alice_values.clone(), bob_values.clone(), 0.05, 0.0);
+        let (secure_zero_confidence, _) = default_check_security(
+            &discussion(alice_values.clone(), bob_values.clone()),
+            0.05,
+            0.0,
+        );
         let (secure_normal_confidence, _) =
-            qkd.check_public_values(alice_values, bob_values, 0.05, 0.99);
+            default_check_security(&discussion(alice_values, bob_values), 0.05, 0.99);
         assert!(!secure_zero_confidence);
         assert!(secure_normal_confidence);
     }
 
     #[test]
-    fn check_public_values_tolerates_expected_noise_within_confidence() {
-        let qkd = minimal_qkd();
+    fn check_security_tolerates_expected_noise_within_confidence() {
         let n = 2000;
         let mismatches = 100; // 5% observed, matching the 5% declared noise
         let alice_values = vec![true; n];
@@ -502,19 +519,19 @@ mod tests {
         for value in bob_values.iter_mut().take(mismatches) {
             *value = false;
         }
-        let (secure, qber) = qkd.check_public_values(alice_values, bob_values, 0.05, 0.99);
+        let (secure, qber) =
+            default_check_security(&discussion(alice_values, bob_values), 0.05, 0.99);
         assert!(secure);
         assert!((qber - 0.05).abs() < 1e-9);
     }
 
     #[test]
-    fn check_public_values_threshold_matches_the_documented_formula() {
+    fn check_security_threshold_matches_the_documented_formula() {
         // Independently recompute `noise + z * sqrt(noise * (1 - noise) / n)` (the
         // formula documented on this function) and probe a QBER just below and just
         // above it, to catch any accidental change to the arithmetic (e.g. a stray
         // `*` <-> `/` or `-` <-> `+` swap) that a loose "still secure" assertion would
         // not notice.
-        let qkd = minimal_qkd();
         let noise: f64 = 0.4;
         let confidence: f64 = 0.95;
         let n: usize = 1000;
@@ -534,11 +551,13 @@ mod tests {
         };
 
         let (alice_below, bob_below) = make_values(expected_threshold - 0.005);
-        let (secure_below, _) = qkd.check_public_values(alice_below, bob_below, noise, confidence);
+        let (secure_below, _) =
+            default_check_security(&discussion(alice_below, bob_below), noise, confidence);
         assert!(secure_below, "expected secure just below the computed threshold");
 
         let (alice_above, bob_above) = make_values(expected_threshold + 0.005);
-        let (secure_above, _) = qkd.check_public_values(alice_above, bob_above, noise, confidence);
+        let (secure_above, _) =
+            default_check_security(&discussion(alice_above, bob_above), noise, confidence);
         assert!(
             !secure_above,
             "expected insecure just above the computed threshold"
