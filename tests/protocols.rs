@@ -1,6 +1,6 @@
 //! End-to-end behavior tests for the built-in protocols, using only the public API.
 
-use qkd::{build_b92, build_bb84, build_six_state, set_global_seed};
+use qkd::{build_b92, build_bb84, build_bbm92, build_e91, build_six_state, set_global_seed};
 
 #[test]
 fn bb84_noiseless_no_eavesdropper_is_perfectly_secure() {
@@ -28,6 +28,63 @@ fn b92_noiseless_no_eavesdropper_is_perfectly_secure() {
     assert!(result.is_considered_secure);
     assert_eq!(result.final_key_qber, Some(0.0));
     assert!(result.key_length.unwrap() > 0);
+}
+
+#[test]
+fn bbm92_noiseless_no_eavesdropper_is_perfectly_secure() {
+    set_global_seed(103);
+    let result = build_bbm92().run(5000, 0.0, 0.0, 0.9999999999);
+    assert!(result.is_considered_secure);
+    assert_eq!(result.final_key_qber, Some(0.0));
+    assert!(result.key_length.unwrap() > 0);
+}
+
+#[test]
+fn bbm92_full_interception_is_detected() {
+    set_global_seed(203);
+    let result = build_bbm92().run(5000, 1.0, 0.0, 0.9999999999);
+    assert!(!result.is_considered_secure);
+    // Once Alice measures her half, Bob's half is in exactly the state a "prepare and
+    // send" qubit would be in, so full interception should disturb it exactly like it
+    // does in BB84: ~25% QBER on the publicly disclosed bits.
+    assert!(result.measured_qber > 0.1);
+}
+
+#[test]
+fn bbm92_declared_noise_matches_the_observed_error_rate() {
+    set_global_seed(304);
+    // Same physics as BB84's equivalent test: the noise step only disturbs the
+    // I-basis half of the encoding, halving the expected error rate relative to the
+    // declared `noise`. This is the key confirmation that Bob's half of the
+    // entangled pair behaves exactly like a directly prepared-and-sent qubit once
+    // Alice has measured her own half.
+    let noise = 0.3;
+    let result = build_bbm92().run(20000, 0.0, noise, 0.999999);
+    assert!(result.is_considered_secure);
+    assert!((result.measured_qber - noise / 2.0).abs() < 0.03);
+}
+
+#[test]
+fn e91_noiseless_no_eavesdropper_approaches_the_tsirelson_bound() {
+    set_global_seed(104);
+    let result = build_e91().run(200_000, 0.0, 0.0, 0.9999999999);
+    assert!(result.is_considered_secure);
+    // |S| should be close to 2*sqrt(2) ~= 2.828 (the quantum/Tsirelson bound), well
+    // above the classical limit of 2.0. `measured_qber` holds |S| for this protocol.
+    let tsirelson_bound = 2.0 * std::f64::consts::SQRT_2;
+    assert!((result.measured_qber - tsirelson_bound).abs() < 0.05);
+    // The key-generating basis pairs have exactly matching angles, so the final key
+    // should be error-free, exactly like every other noiseless protocol.
+    assert_eq!(result.final_key_qber, Some(0.0));
+    assert!(result.key_length.unwrap() > 0);
+}
+
+#[test]
+fn e91_full_interception_drops_the_chsh_parameter_below_the_classical_bound() {
+    set_global_seed(105);
+    let result = build_e91().run(200_000, 1.0, 0.0, 0.9999999999);
+    assert!(!result.is_considered_secure);
+    assert!(result.measured_qber < 2.0);
 }
 
 #[test]
@@ -100,4 +157,6 @@ fn protocol_names_are_set_correctly() {
     assert_eq!(build_bb84().get_name(), "BB84");
     assert_eq!(build_six_state().get_name(), "SixState");
     assert_eq!(build_b92().get_name(), "B92");
+    assert_eq!(build_bbm92().get_name(), "BBM92");
+    assert_eq!(build_e91().get_name(), "E91");
 }
